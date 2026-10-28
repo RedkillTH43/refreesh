@@ -2,12 +2,15 @@
 #include <Arduino.h>
 #include <LiquidCrystal_I2C.h>
 #include <RTClib.h>
+#include <SD.h>
 #include <SensirionI2cScd4x.h>
+#include <SPI.h>
 #include <Wire.h>
 
 // Define component pins
 #define CLOCK_INTERRUPT_PIN 2
-#define ALARM_DELAY 5000
+#define CHIP_SELECT_PIN 10
+#define ALARM_DELAY 4000
 #define DEFAULT_CODE 0
 #define ALARM_CODE 1
 #define COUNTDOWN_CODE 2
@@ -15,15 +18,53 @@
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
+Sd2Card card;
+SdVolume volume;
+SdFile root;
 //SensirionI2cScd4x scd41;
 
+// Initialize global variables
 bool alarmExists = false;
+
+/////////////////////////////////////
+// Main Program Loop
+/////////////////////////////////////
 
 void setup() {
   // Initialize components
   initializeArduino();
-  initializeDS3231();
   initializeLCD();
+  
+  lcd.clear();
+  lcd.print(F("Testing"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("components..."));
+  delay(5000);
+
+  lcd.clear();
+  lcd.print(F("Arduino is"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("working..."));
+  delay(2000);
+
+  lcd.clear();
+  lcd.print(F("LCD1602 is"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("working..."));
+  delay(2000);
+
+  initializeDS3231();
+  lcd.clear();
+  lcd.print(F("DS3231 is"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("working..."));
+  delay(2000);
+
+  initializeSDCard();
+  lcd.clear();
+  lcd.print(F("SD Card is"));
+  lcd.setCursor(0, 1);
+  lcd.print(F("working..."));
 
   delay(3000);  // Wait 3 seconds to simulate startup
 
@@ -34,15 +75,17 @@ void setup() {
 
 void loop() {
   //measureEnvironment();
-  renderLCD(DEFAULT_CODE);
   handleEvent();
+  renderLCD(DEFAULT_CODE);
 }
 
 /////////////////////////////////////
-// Separator
+// Program Functions
 /////////////////////////////////////
 
+// Display data to LCD
 void renderLCD(int code) {
+  // Call render function according to code
   switch (code) {
     case ALARM_CODE:
       alarm();
@@ -57,13 +100,16 @@ void renderLCD(int code) {
       break;
 
     default:
-      Serial.println("Invalid code.");
+      Serial.println(F("Invalid code."));
       break;
   }
 }
 
+// Handles events
 void handleEvent() {
+  // Checks if there is an alarm
   if (alarmExists) {
+    // Check if alarm is ringing
     if (ds3231.alarmFired(1)) {
       renderLCD(ALARM_CODE);
     } else {
@@ -75,67 +121,89 @@ void handleEvent() {
 
 // Measure and display time
 void measureTime() {
-  // Display time
+  // Display time in Serial monitor
   char date[10] = "hh:mm:ss";
   ds3231.now().toString(date);
-  Serial.print("Time: ");
+  Serial.print(F("Time: "));
   Serial.print(date);
-
+  
+  // Checks if there is an alarm
   if (alarmExists) {
     DateTime alarm1 = ds3231.getAlarm1();
     char alarm1Date[10] = "hh:mm:ss";
     alarm1.toString(alarm1Date);
-    Serial.print(" Alarm: ");
+    Serial.print(F(" Alarm: "));
     Serial.print(alarm1Date);
     return;
   }
-
-  Serial.println(" ");
+  // Display time in LCD
+  Serial.println(F(" "));
   lcd.clear();
-  lcd.print("Time: ");
+  lcd.print(F("Time: "));
   lcd.print(date);
   delay(1000);
 }
 
+// Helper function for alarm
 void onAlarm() {
   return;
 }
 
+// Displays alarm ringing
 void alarm() {
-  unsigned long time = millis();
+  unsigned long time = millis(); // Store current time in milliseconds
+  // Loops until ALARM_DELAY is reached in milliseconds
   do {
     lcd.clear();
     delay(250);
-    lcd.print("Alarm ringing!");
+    lcd.print(F("Alarm ringing!"));
     delay(250);
   } while ((millis() - time) < ALARM_DELAY);
   ds3231.clearAlarm(1);
-  alarmExists = false;
+  alarmExists = false; // Sets alarm as false
 }
 
 void setAlarm() {
   // Set alarm 1
   if (!ds3231.setAlarm1(ds3231.now() + TimeSpan(10), DS3231_A1_Second)) {
-    Serial.println("Error: alarm wasn't set!");
+    Serial.println(F("Error: alarm wasn't set!"));
   } else {
-    Serial.println("Alarm will happen in 10 seconds!");
-    alarmExists = true;
+    Serial.println(F("Alarm will happen in 10 seconds!"));
+    alarmExists = true; // Sets alarm as true
   }
 }
 
+// Decrements time remaining
 void countdown() {
+  // Store alarm time and current time
   uint8_t alarmSecond = ds3231.getAlarm1().second();
   uint8_t currentSecond = ds3231.now().second();
 
+  // Display to LCD
   lcd.clear();
-  lcd.print("Alarm in: ");
+  lcd.print(F("Alarm in: "));
   lcd.print(alarmSecond - currentSecond);
-  lcd.print("s");
+  lcd.print(F("s"));
 
-  Serial.print(" Alarm in: ");
+  // Display to Serial
+  Serial.print(F(" Alarm in: "));
   Serial.print(alarmSecond - currentSecond);
-  Serial.println("s");
+  Serial.println(F("s"));
   delay(1000);
+}
+
+// Prepare SD Card on startup
+void initializeSDCard() {
+  Serial.println(F("Initializing SD card..."));
+
+  if (!card.init(SPI_HALF_SPEED, CHIP_SELECT_PIN)) {
+    Serial.println(F("Error: SD Card failed to initialize."));
+    lcd.clear();
+    lcd.print(F("SD Card failed"));
+    while(1);
+  } else {
+    Serial.println(F("Wiring is correct and a card is present."));
+  }
 }
 
 // Prepare DS3231 on startup
@@ -143,8 +211,9 @@ void initializeDS3231() {
   // Test I2C connection
   if (!ds3231.begin()) {
     lcd.clear();
-    lcd.print("Error: can't find DS3231.");
-    return;
+    lcd.print(F("DS3231 failed"));
+    Serial.println(F("Error: DS3231 failed to initialize."));
+    while(1);
   }
 
   // Checks if stopped then reset time
@@ -183,7 +252,6 @@ void initializeLCD() {
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Starting...");
 }
 
 // Prepare Arduino on startup
@@ -193,7 +261,6 @@ void initializeArduino() {
     delay(100);
   }
   Wire.begin();
-  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 /*
