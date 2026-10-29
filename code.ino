@@ -13,7 +13,7 @@
 #define ALARM_DELAY 4000
 #define DEFAULT_CODE 0
 #define ALARM_CODE 1
-#define COUNTDOWN_CODE 2
+#define SETUP_CODE 2
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -21,7 +21,7 @@ RTC_DS3231 ds3231;
 Sd2Card card;
 SdVolume volume;
 SdFile root;
-//SensirionI2cScd4x scd41;
+SensirionI2cScd4x scd41;
 
 // Initialize global variables
 bool alarmExists = false;
@@ -30,130 +30,169 @@ bool alarmExists = false;
 // Main Program Loop
 /////////////////////////////////////
 
-void setup() {
+void setup()
+{
   // Initialize components
   initializeArduino();
   initializeLCD();
-  
-  lcd.clear();
-  lcd.print(F("Testing"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("components..."));
-  delay(5000);
-
-  lcd.clear();
-  lcd.print(F("Arduino is"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("working..."));
-  delay(2000);
-
-  lcd.clear();
-  lcd.print(F("LCD1602 is"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("working..."));
-  delay(2000);
-
+  initializeSCD41();
   initializeDS3231();
-  lcd.clear();
-  lcd.print(F("DS3231 is"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("working..."));
-  delay(2000);
-
   initializeSDCard();
-  lcd.clear();
-  lcd.print(F("SD Card is"));
-  lcd.setCursor(0, 1);
-  lcd.print(F("working..."));
 
-  delay(3000);  // Wait 3 seconds to simulate startup
+  // Display success messages to LCD
+  renderLCD(SETUP_CODE);
+
+  delay(3000); // Wait 3 seconds to simulate startup
 
   // Set the alarm (for testing purposes)
   setAlarm();
-  //initializeSCD41();
 }
 
-void loop() {
-  //measureEnvironment();
+void loop()
+{
   handleEvent();
-  renderLCD(DEFAULT_CODE);
+  update();
+  // renderLCD(DEFAULT_CODE);
 }
 
 /////////////////////////////////////
 // Program Functions
 /////////////////////////////////////
 
-// Display data to LCD
-void renderLCD(int code) {
-  // Call render function according to code
-  switch (code) {
-    case ALARM_CODE:
-      alarm();
-      break;
-
-    case COUNTDOWN_CODE:
-      countdown();
-      break;
-
-    case DEFAULT_CODE:
-      measureTime();
-      break;
-
-    default:
-      Serial.println(F("Invalid code."));
-      break;
-  }
-}
-
 // Handles events
-void handleEvent() {
+void handleEvent()
+{
   // Checks if there is an alarm
-  if (alarmExists) {
+  if (alarmExists)
+  {
     // Check if alarm is ringing
-    if (ds3231.alarmFired(1)) {
+    if (ds3231.alarmFired(1))
+    {
       renderLCD(ALARM_CODE);
-    } else {
-      renderLCD(COUNTDOWN_CODE);
     }
   }
   return;
 }
 
-// Measure and display time
-void measureTime() {
-  // Display time in Serial monitor
-  char date[10] = "hh:mm:ss";
-  ds3231.now().toString(date);
-  Serial.print(F("Time: "));
-  Serial.print(date);
-  
-  // Checks if there is an alarm
-  if (alarmExists) {
-    DateTime alarm1 = ds3231.getAlarm1();
-    char alarm1Date[10] = "hh:mm:ss";
-    alarm1.toString(alarm1Date);
-    Serial.print(F(" Alarm: "));
-    Serial.print(alarm1Date);
-    return;
+// Display data to LCD
+void renderLCD(int code)
+{
+  // Call render function according to code
+  switch (code)
+  {
+  case ALARM_CODE:
+    displayAlarm();
+    break;
+
+  case SETUP_CODE:
+    displaySetup();
+    break;
+
+  case DEFAULT_CODE:
+    // displayData();
+    break;
+
+  default:
+    Serial.println(F("Invalid code."));
+    break;
   }
-  // Display time in LCD
-  Serial.println(F(" "));
+}
+
+// Updates data
+void update()
+{
   lcd.clear();
+  lcd.print(F("Measuring..."));
+  measureEnvironment();
+}
+
+// Display setup messages
+void displaySetup()
+{
+  displayMessages(F("Testing"), F("components..."), 5000);
+  displayMessages(F("Arduino is"), F("working..."), 2000);
+  displayMessages(F("LCD1602 is"), F("working..."), 2000);
+  displayMessages(F("SCD41 is"), F("working..."), 2000);
+  displayMessages(F("DS3231 is"), F("working..."), 2000);
+  displayMessages(F("SD card is"), F("working..."), 2000);
+}
+
+// Display sensory data
+void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
+{
+  Serial.print(F("Time: "));
+  Serial.println(date);
+
+  Serial.print(F("Temperature: "));
+  Serial.print(temperature);
+  Serial.println(F("C"));
+
+  Serial.print(F("Humidity: "));
+  Serial.print(relativeHumidity);
+  Serial.println(F("%"));
+
+  Serial.print(F("CO2 Level: "));
+  Serial.print(co2Concentration);
+  Serial.println(F("PPM"));
+
+  // Display temperature to LCD
+  lcd.clear();
+  lcd.print(F("Temp: "));
+  lcd.print(temperature);
+  lcd.print(char(223));
+  lcd.print(F("C"));
+
+  // Display humidity to LCD
+  lcd.setCursor(0, 1);
+  lcd.print(F("Humidity: "));
+  lcd.print(relativeHumidity);
+  lcd.print(F("%"));
+
+  delay(3000);
+
+  // Display CO2 concentration to LCD
+  lcd.clear();
+  lcd.print(F("CO2: "));
+  lcd.print(co2Concentration);
+  lcd.print(F("PPM"));
+
+  // Display time to LCD
+  lcd.setCursor(0, 1);
   lcd.print(F("Time: "));
   lcd.print(date);
-  delay(1000);
+
+  delay(3000);
+}
+
+void displayMessages(String row1Message, String row2Message, int milliseconds)
+{
+  lcd.clear();
+  lcd.print(row1Message);
+  lcd.setCursor(0, 1);
+  lcd.print(row2Message);
+  delay(milliseconds);
 }
 
 // Helper function for alarm
-void onAlarm() {
+void onAlarm()
+{
   return;
 }
 
+void PrintUint64(uint64_t &value)
+{
+  Serial.print("0x");
+  Serial.print((uint32_t)(value >> 32), HEX);
+  Serial.println((uint32_t)(value & 0xFFFFFFFF), HEX);
+}
+
 // Displays alarm ringing
-void alarm() {
+void displayAlarm()
+{
   unsigned long time = millis(); // Store current time in milliseconds
   // Loops until ALARM_DELAY is reached in milliseconds
-  do {
+  do
+  {
     lcd.clear();
     delay(250);
     lcd.print(F("Alarm ringing!"));
@@ -163,61 +202,57 @@ void alarm() {
   alarmExists = false; // Sets alarm as false
 }
 
-void setAlarm() {
+void setAlarm()
+{
   // Set alarm 1
-  if (!ds3231.setAlarm1(ds3231.now() + TimeSpan(10), DS3231_A1_Second)) {
+  if (!ds3231.setAlarm1(ds3231.now() + TimeSpan(30), DS3231_A1_Second))
+  {
     Serial.println(F("Error: alarm wasn't set!"));
-  } else {
+  }
+  else
+  {
     Serial.println(F("Alarm will happen in 10 seconds!"));
     alarmExists = true; // Sets alarm as true
   }
 }
 
-// Decrements time remaining
-void countdown() {
-  // Store alarm time and current time
-  uint8_t alarmSecond = ds3231.getAlarm1().second();
-  uint8_t currentSecond = ds3231.now().second();
-
-  // Display to LCD
-  lcd.clear();
-  lcd.print(F("Alarm in: "));
-  lcd.print(alarmSecond - currentSecond);
-  lcd.print(F("s"));
-
-  // Display to Serial
-  Serial.print(F(" Alarm in: "));
-  Serial.print(alarmSecond - currentSecond);
-  Serial.println(F("s"));
-  delay(1000);
-}
-
 // Prepare SD Card on startup
-void initializeSDCard() {
+void initializeSDCard()
+{
   Serial.println(F("Initializing SD card..."));
 
-  if (!card.init(SPI_HALF_SPEED, CHIP_SELECT_PIN)) {
+  if (!card.init(SPI_HALF_SPEED, CHIP_SELECT_PIN))
+  {
     Serial.println(F("Error: SD Card failed to initialize."));
     lcd.clear();
     lcd.print(F("SD Card failed"));
-    while(1);
-  } else {
+    while (1)
+      ;
+  }
+  else
+  {
     Serial.println(F("Wiring is correct and a card is present."));
   }
 }
 
 // Prepare DS3231 on startup
-void initializeDS3231() {
+void initializeDS3231()
+{
+  Serial.println(F("Initializing DS3231..."));
+
   // Test I2C connection
-  if (!ds3231.begin()) {
+  if (!ds3231.begin())
+  {
     lcd.clear();
     lcd.print(F("DS3231 failed"));
     Serial.println(F("Error: DS3231 failed to initialize."));
-    while(1);
+    while (1)
+      ;
   }
 
   // Checks if stopped then reset time
-  if (ds3231.lostPower()) {
+  if (ds3231.lostPower())
+  {
     ds3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 
@@ -248,126 +283,113 @@ void initializeDS3231() {
 }
 
 // Prepare LCD on startup
-void initializeLCD() {
+void initializeLCD()
+{
+  Serial.println(F("Initializing LCD1602..."));
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
 }
 
 // Prepare Arduino on startup
-void initializeArduino() {
+void initializeArduino()
+{
   Serial.begin(9600);
-  while (!Serial) {
+  while (!Serial)
+  {
     delay(100);
   }
+  Serial.println(F("Initializing Arduino..."));
   Wire.begin();
 }
 
-/*
-void measureEnvironment() {
+// Prepare SCD41 on startup
+void initializeSCD41()
+{
+  Serial.println(F("Initializing SCD41..."));
+
+  // Connect to I2C
+  scd41.begin(Wire, SCD41_I2C_ADDR_62);
+  uint64_t serialNumber = 0;
+
+  delay(30); // Wait for the sensor
+
+  // Ensure sensor is in clean state
+  if (scd41.wakeUp() != 0)
+  {
+    Serial.print("Error trying to execute wakeUp(): ");
+    while (1)
+      ;
+  }
+
+  if (scd41.stopPeriodicMeasurement() != 0)
+  {
+    Serial.print("Error trying to execute stopPeriodicMeasurement(): ");
+    while (1)
+      ;
+  }
+
+  if (scd41.reinit() != 0)
+  {
+    Serial.print("Error trying to execute reinit(): ");
+    while (1)
+      ;
+  }
+
+  // Read out information about the sensor
+  if (scd41.getSerialNumber(serialNumber) != 0)
+  {
+    Serial.print("Error trying to execute getSerialNumber(): ");
+    while (1)
+      ;
+  }
+  Serial.print("Serial Number: ");
+  PrintUint64(serialNumber);
+
+  if (scd41.startPeriodicMeasurement() != 0)
+  {
+    Serial.print("Error trying to execute startPeriodicMeasurement(): ");
+    while (1)
+      ;
+  }
+}
+
+void measureEnvironment()
+{
   bool dataReady = false;
   uint16_t co2Concentration = 0;
   float temperature = 0.0;
   float relativeHumidity = 0.0;
+  char date[10] = "hh:mm:ss";
 
   delay(5000);
 
-  success = scd41.getDataReadyStatus(dataReady);
-  if (!success) {
+  ds3231.now().toString(date);
+
+  if (scd41.getDataReadyStatus(dataReady) != 0)
+  {
+    Serial.print("Error trying to execute getDataReadyStatus(): ");
+    while (1)
+      ;
+  }
+
+  while (!dataReady)
+  {
+    delay(100);
+    if (scd41.getDataReadyStatus(dataReady) != 0)
+    {
       Serial.print("Error trying to execute getDataReadyStatus(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-      return;
-  }
-  while (!dataReady) {
-      delay(100);
-      success = scd41.getDataReadyStatus(dataReady);
-      if (!success) {
-          Serial.print("Error trying to execute getDataReadyStatus(): ");
-          errorToString(success, errorMessage, sizeof errorMessage);
-          Serial.println(errorMessage);
-          return;
-      }
+      while (1)
+        ;
+    }
   }
 
-  success = scd41.readMeasurement(co2Concentration, temperature, relativeHumidity);
-  if (!success) {
-      Serial.print("Error trying to execute readMeasurement(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-      return;
+  if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
+  {
+    Serial.print("Error trying to execute readMeasurement(): ");
+    while (1)
+      ;
   }
 
-  Serial.print("CO2 concentration [ppm]: ");
-  Serial.print(co2Concentration);
-  Serial.println();
-  Serial.print("Temperature [°C]: ");
-  Serial.print(temperature);
-  Serial.println();
-  Serial.print("Relative Humidity [RH]: ");
-  Serial.print(relativeHumidity);
-  Serial.println();
+  displayData(temperature, relativeHumidity, co2Concentration, date);
 }
-
-
-static char errorMessage[64];
-static int16_t success;
-
-void PrintUint64(uint64_t& value) {
-    Serial.print("0x");
-    Serial.print((uint32_t)(value >> 32), HEX);
-    Serial.print((uint32_t)(value & 0xFFFFFFFF), HEX);
-}
-
-
-// Prepare SCD41 on startup
-void initializeSCD41() {
-  scd41.begin(Wire, SCD41_I2C_ADDR_62);
-
-  uint64_t serialNumber = 0;
-  delay(30);
-
-  // Ensure sensor is in clean state
-  success = scd41.wakeUp();
-  if (!success) {
-      Serial.print("Error trying to execute wakeUp(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-  }
-  
-  success = scd41.stopPeriodicMeasurement();
-  if (!success) {
-      Serial.print("Error trying to execute stopPeriodicMeasurement(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-  }
-
-  success = scd41.reinit();
-  if (!success) {
-      Serial.print("Error trying to execute reinit(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-  }
-
-  // Read out information about the sensor
-  success = scd41.getSerialNumber(serialNumber);
-  if (!success) {
-      Serial.print("Error trying to execute getSerialNumber(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-      return;
-  }
-
-  Serial.print("serial number: ");
-  PrintUint64(serialNumber);
-  Serial.println();
-
-  success = scd41.startPeriodicMeasurement();
-  if (!success) {
-      Serial.print("Error trying to execute startPeriodicMeasurement(): ");
-      errorToString(success, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
-      return;
-  }
-}
-*/
