@@ -9,6 +9,10 @@
 
 // Define component pins
 #define CLOCK_INTERRUPT_PIN 2
+#define RED_LED_PIN 7
+#define YELLOW_LED_PIN 6
+#define GREEN_LED_PIN 5
+#define RELAY_PIN 9
 #define CHIP_SELECT_PIN 10
 #define ALARM_DELAY 4000
 #define DEFAULT_CODE 0
@@ -35,6 +39,8 @@ void setup()
   // Initialize components
   initializeArduino();
   initializeLCD();
+  initializeRelay(); 
+  initializeLED();
   initializeSCD41();
   initializeDS3231();
   initializeSDCard();
@@ -50,7 +56,6 @@ void setup()
 
 void loop()
 {
-  handleEvent();
   update();
   // renderLCD(DEFAULT_CODE);
 }
@@ -60,7 +65,7 @@ void loop()
 /////////////////////////////////////
 
 // Handles events
-void handleEvent()
+void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
 {
   // Checks if there is an alarm
   if (alarmExists)
@@ -71,7 +76,20 @@ void handleEvent()
       renderLCD(ALARM_CODE);
     }
   }
-  return;
+  
+  if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000) {
+    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(GREEN_LED_PIN, HIGH);
+    digitalWrite(YELLOW_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, LOW);
+  }
+  else
+  {
+    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(GREEN_LED_PIN, LOW);
+    digitalWrite(YELLOW_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, HIGH);
+  }
 }
 
 // Display data to LCD
@@ -112,6 +130,8 @@ void displaySetup()
   displayMessages(F("Testing"), F("components..."), 5000);
   displayMessages(F("Arduino is"), F("working..."), 2000);
   displayMessages(F("LCD1602 is"), F("working..."), 2000);
+  displayMessages(F("Relay is"), F("working..."), 2000);
+  displayMessages(F("LEDs are"), F("working..."), 2000);
   displayMessages(F("SCD41 is"), F("working..."), 2000);
   displayMessages(F("DS3231 is"), F("working..."), 2000);
   displayMessages(F("SD card is"), F("working..."), 2000);
@@ -392,4 +412,20 @@ void measureEnvironment()
   }
 
   displayData(temperature, relativeHumidity, co2Concentration, date);
+  handleEvent(temperature, relativeHumidity, co2Concentration, date);
+}
+
+void initializeRelay() {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, HIGH);
+}
+
+void initializeLED() {
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(YELLOW_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+
+  digitalWrite(RED_LED_PIN, HIGH);
+  digitalWrite(YELLOW_LED_PIN, HIGH);
+  digitalWrite(GREEN_LED_PIN, HIGH);
 }
