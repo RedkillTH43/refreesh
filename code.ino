@@ -18,13 +18,11 @@
 #define DEFAULT_CODE 0
 #define ALARM_CODE 1
 #define SETUP_CODE 2
+#define FILE_NAME "data.csv"
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
-Sd2Card card;
-SdVolume volume;
-SdFile root;
 SensirionI2cScd4x scd41;
 
 // Initialize global variables
@@ -39,7 +37,7 @@ void setup()
   // Initialize components
   initializeArduino();
   initializeLCD();
-  initializeRelay(); 
+  initializeRelay();
   initializeLED();
   initializeSCD41();
   initializeDS3231();
@@ -76,8 +74,9 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
       renderLCD(ALARM_CODE);
     }
   }
-  
-  if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000) {
+
+  if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
+  {
     digitalWrite(RELAY_PIN, LOW);
     digitalWrite(GREEN_LED_PIN, HIGH);
     digitalWrite(YELLOW_LED_PIN, HIGH);
@@ -241,17 +240,15 @@ void initializeSDCard()
 {
   Serial.println(F("Initializing SD card..."));
 
-  if (!card.init(SPI_HALF_SPEED, CHIP_SELECT_PIN))
+  File dataFile;
+
+  if (!SD.begin(CHIP_SELECT_PIN))
   {
     Serial.println(F("Error: SD Card failed to initialize."));
     lcd.clear();
-    lcd.print(F("SD Card failed"));
+    lcd.print(F("SD card failed"));
     while (1)
       ;
-  }
-  else
-  {
-    Serial.println(F("Wiring is correct and a card is present."));
   }
 }
 
@@ -309,6 +306,7 @@ void initializeLCD()
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
+  lcd.print(F("testing..."));
 }
 
 // Prepare Arduino on startup
@@ -372,14 +370,18 @@ void initializeSCD41()
     while (1)
       ;
   }
+
+  uint16_t testResult = 0;
+  const int tested = scd41.performSelfTest(testResult);
+  Serial.println(testResult);
 }
 
 void measureEnvironment()
 {
   bool dataReady = false;
   uint16_t co2Concentration = 0;
-  float temperature = 0.0;
-  float relativeHumidity = 0.0;
+  float temperature = 0.0f;
+  float relativeHumidity = 0.0f;
   char date[10] = "hh:mm:ss";
 
   delay(5000);
@@ -415,12 +417,15 @@ void measureEnvironment()
   handleEvent(temperature, relativeHumidity, co2Concentration, date);
 }
 
-void initializeRelay() {
+void initializeRelay()
+{
+  Serial.println(F("Initializing relay..."));
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);
 }
 
-void initializeLED() {
+void initializeLED()
+{
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(YELLOW_LED_PIN, OUTPUT);
   pinMode(GREEN_LED_PIN, OUTPUT);
@@ -428,4 +433,63 @@ void initializeLED() {
   digitalWrite(RED_LED_PIN, HIGH);
   digitalWrite(YELLOW_LED_PIN, HIGH);
   digitalWrite(GREEN_LED_PIN, HIGH);
+}
+
+// Read sd card contents
+void readFromCard()
+{
+  // Initialize File object
+  File dataFile;
+
+  // Open file for reading
+  dataFile = SD.open(FILE_NAME, FILE_READ);
+
+  // Check if file does not exist
+  if (!dataFile)
+  {
+    // Print error message
+    Serial.print(F("Error: "));
+    Serial.print(FILE_NAME);
+    Serial.println(F(" failed to open."));
+    lcd.clear();
+    lcd.print(F("SD card failed"));
+    while (1)
+      ;
+  }
+
+  // Loop while data exists in file
+  while (dataFile.available())
+  {
+    Serial.write(dataFile.read()); // Read file and print to Serial
+  }
+  dataFile.close(); // Close file
+}
+
+// Write data to sd card
+void writeToCard(char data[20])
+{
+  // Initialize File object
+  File dataFile;
+
+  // Open file for writing
+  dataFile = SD.open(FILE_NAME, FILE_WRITE);
+
+  // Check if file does not exist
+  if (!dataFile)
+  {
+    // Print error message
+    Serial.print(F("Error: "));
+    Serial.print(FILE_NAME);
+    Serial.println(" failed to open.");
+    lcd.clear();
+    lcd.print("SD card failed");
+    while (1)
+      ;
+  }
+
+  // Write to file
+  Serial.println(F("Writing to file..."));
+  dataFile.println(data);
+  dataFile.close();
+  Serial.println(F("Done."));
 }
