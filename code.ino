@@ -37,7 +37,7 @@ void setup()
   initializeLCD();
   initializeRelay();
   initializeLED();
-  // initializeSCD41();
+  initializeSCD41();
   initializeDS3231();
   initializeSDCard();
 
@@ -46,7 +46,6 @@ void setup()
 
   // Set the alarm (for testing purposes)
   setAlarm(1);
-  setAlarm(2);
 }
 
 void loop()
@@ -61,7 +60,6 @@ void loop()
   // Store current time
   ds3231.now().toString(date);
 
-  /*
   // Set data ready status
   if (scd41.getDataReadyStatus(dataReady) != 0)
   {
@@ -86,7 +84,6 @@ void loop()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
   }
-  */
 
   // Display measured data
   displayData(temperature, relativeHumidity, co2Concentration, date);
@@ -102,6 +99,7 @@ void loop()
 // Handles events
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
 {
+  /*
   // Check if alarm 1 is ringing
   if (ds3231.alarmFired(1))
   {
@@ -119,10 +117,12 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Clear existing alarm 1
     ds3231.clearAlarm(1);
+    setAlarm(1);
   }
+    */
 
-  // Check if alarm 2 is ringing
-  if (ds3231.alarmFired(2))
+  // Check if alarm 1 is ringing
+  if (ds3231.alarmFired(1))
   {
     // Declare necessary variables
     char tempText[7], humidityText[7], co2Text[7];
@@ -133,10 +133,11 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     itoa(co2Concentration, co2Text, 10);
 
     // Write to file in sd card
-    writeToCard(tempText, humidityText, co2Text);
+    writeToCard(tempText, humidityText, co2Text, date);
+    readFromCard();
 
-    // Clear existing alarm 2
-    ds3231.clearAlarm(2);
+    // Clear existing alarm 1
+    ds3231.clearAlarm(1);
   }
 
   // Check if temperature, humidity, and co2 are above normal level
@@ -161,11 +162,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 /////////////////////////////////////
 // Display Functions
 /////////////////////////////////////
-
-// Displays alarm ringing
-void displayAlarm()
-{
-}
 
 // Display sensory data
 void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
@@ -254,8 +250,6 @@ void initializeArduino()
   }
   Serial.println(F("Initializing Arduino..."));
   Wire.begin();
-  displayMessages(F("Testing"), F("components..."), 5000);
-  displayMessages(F("Arduino is"), F("working..."), 2000);
 }
 
 // Prepare DS3231 on startup
@@ -318,6 +312,8 @@ void initializeLCD()
   lcd.backlight();
   lcd.setCursor(0, 0);
 
+  displayMessages(F("Testing"), F("components..."), 5000);
+  displayMessages(F("Arduino is"), F("working..."), 2000);
   displayMessages(F("LCD1602 is"), F("working..."), 2000);
 }
 
@@ -387,20 +383,21 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: reinit() failed."));
   }
+  /*
+    // Test the component's functionality
+    if (scd41.performSelfTest(testResult) != 0)
+    {
+      // Display error messages
+      displayError(F("SCD41 failed"), F("Error: performSelfTest() failed."));
+    }
 
-  // Test the component's functionality
-  if (scd41.performSelfTest(testResult) != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: performSelfTest() failed."));
-  }
-
-  // Check result of self-test
-  if (testResult != 0)
-  {
-    // Display error messages
-    displayError(F("SCD 41 failed"), F("Error: self-test failed."));
-  }
+    // Check result of self-test
+    if (testResult != 0)
+    {
+      // Display error messages
+      displayError(F("SCD 41 failed"), F("Error: self-test failed."));
+    }
+      */
 
   // Read out information about the sensor
   if (scd41.getSerialNumber(serialNumber) != 0)
@@ -429,13 +426,14 @@ void initializeSDCard()
   Serial.println(F("Initializing SD card..."));
 
   // Check if there is no connection with sd card
+  delay(2000);
   if (!SD.begin(CHIP_SELECT_PIN))
   {
     // Display error messages
     displayError(F("SD card failed"), F("Error: SD card failed to initialize."));
   }
 
-  displayMessages(F("SD card is"), F("working..."), 2000);
+  displayMessages(F("SD card is"), F("working..."), 0);
 }
 
 /////////////////////////////////////
@@ -469,13 +467,14 @@ void readFromCard()
   if (!dataFile)
   {
     // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open."));
+    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
   }
 
   // Loop while data exists in file
   while (dataFile.available())
   {
-    Serial.write(dataFile.read()); // Read file and print to Serial
+    // Read file and print to Serial
+    Serial.write(dataFile.read());
   }
   dataFile.close(); // Close file
 }
@@ -493,15 +492,6 @@ void setAlarm(int alarmNum)
     }
     break;
 
-  case 2:
-    // Set alarm 2
-    if (!ds3231.setAlarm2(ds3231.now() + TimeSpan(3600), DS3231_A2_Hour))
-    {
-      // Display error messages
-      displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
-    }
-    break;
-
   default:
     displayError(F("DS3231 failed"), F("Error: invalid alarm number."));
     break;
@@ -509,7 +499,7 @@ void setAlarm(int alarmNum)
 }
 
 // Write data to sd card
-void writeToCard(char tempText[7], char humidityText[7], char co2Text[7])
+void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char time[10])
 {
   // Initialize File object
   File dataFile;
@@ -521,11 +511,15 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7])
   if (!dataFile)
   {
     // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open."));
+    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
   }
 
   // Write to file
   Serial.println(F("Writing to file..."));
+
+  // Write time to file
+  dataFile.print(time);
+  dataFile.print(F(", "));
 
   // Write temperature to file
   dataFile.print(tempText);
