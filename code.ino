@@ -9,23 +9,24 @@
 
 // Define component pins
 #define CLOCK_INTERRUPT_PIN 2
-#define RED_LED_PIN 7
-#define YELLOW_LED_PIN 6
 #define GREEN_LED_PIN 5
+#define YELLOW_LED_PIN 6
+#define RED_LED_PIN 7
 #define RELAY_PIN 9
 #define CHIP_SELECT_PIN 10
+
+// Define global macros
+#define FILE_NAME "data.csv"
 #define ALARM_DELAY 4000
-#define ERROR_CODE 0
 #define ALARM_CODE 1
 #define SETUP_CODE 2
-#define FILE_NAME "data.csv"
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
 SensirionI2cScd4x scd41;
 
-// Initialize global variables
+// Initialize global variable
 bool alarmExists = false;
 
 /////////////////////////////////////
@@ -39,12 +40,9 @@ void setup()
   initializeLCD();
   initializeRelay();
   initializeLED();
-  initializeSCD41();
+  // initializeSCD41();
   initializeDS3231();
   initializeSDCard();
-
-  // Display success messages to LCD
-  displaySetup();
 
   // Wait 3 seconds to simulate startup
   delay(3000);
@@ -55,7 +53,7 @@ void setup()
 
 void loop()
 {
-  // Initialize necessary functions
+  // Initialize necessary variables
   bool dataReady = false;
   uint16_t co2Concentration = 0;
   float temperature = 0.0f;
@@ -65,6 +63,7 @@ void loop()
   // Store current time
   ds3231.now().toString(date);
 
+  /*
   // Set data ready status
   if (scd41.getDataReadyStatus(dataReady) != 0)
   {
@@ -89,6 +88,7 @@ void loop()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
   }
+  */
 
   // Display measured data
   displayData(temperature, relativeHumidity, co2Concentration, date);
@@ -232,19 +232,6 @@ void displayMessages(String row1Message, String row2Message, int milliseconds)
   delay(milliseconds);
 }
 
-// Display setup messages
-void displaySetup()
-{
-  displayMessages(F("Testing"), F("components..."), 5000);
-  displayMessages(F("Arduino is"), F("working..."), 2000);
-  displayMessages(F("LCD1602 is"), F("working..."), 2000);
-  displayMessages(F("Relay is"), F("working..."), 2000);
-  displayMessages(F("LEDs are"), F("working..."), 2000);
-  displayMessages(F("SCD41 is"), F("working..."), 2000);
-  displayMessages(F("DS3231 is"), F("working..."), 2000);
-  displayMessages(F("SD card is"), F("working..."), 2000);
-}
-
 /////////////////////////////////////
 // Initialize Functions
 /////////////////////////////////////
@@ -259,6 +246,8 @@ void initializeArduino()
   }
   Serial.println(F("Initializing Arduino..."));
   Wire.begin();
+  displayMessages(F("Testing"), F("components..."), 5000);
+  displayMessages(F("Arduino is"), F("working..."), 2000);
 }
 
 // Prepare DS3231 on startup
@@ -302,6 +291,8 @@ void initializeDS3231()
     alarmExists = true;
   }
   */
+
+  displayMessages(F("DS3231 is"), F("working..."), 2000);
 }
 
 // Prepare LCD on startup
@@ -312,6 +303,8 @@ void initializeLCD()
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
+
+  displayMessages(F("LCD1602 is"), F("working..."), 2000);
 }
 
 // Prepare LEDs on startup
@@ -328,6 +321,8 @@ void initializeLED()
   digitalWrite(RED_LED_PIN, HIGH);
   digitalWrite(YELLOW_LED_PIN, HIGH);
   digitalWrite(GREEN_LED_PIN, HIGH);
+
+  displayMessages(F("LEDs are"), F("working..."), 2000);
 }
 
 // Prepare relay on startup
@@ -340,6 +335,8 @@ void initializeRelay()
 
   // Set relay HIGH initially
   digitalWrite(RELAY_PIN, HIGH);
+
+  displayMessages(F("Relay is"), F("working..."), 2000);
 }
 
 // Prepare SCD41 on startup
@@ -408,6 +405,8 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startPeriodicMeasurement() failed."));
   }
+
+  displayMessages(F("SCD41 is"), F("working..."), 2000);
 }
 
 // Prepare SD Card on startup
@@ -421,6 +420,8 @@ void initializeSDCard()
     // Display error messages
     displayError(F("SD card failed"), F("Error: SD card failed to initialize."));
   }
+
+  displayMessages(F("SD card is"), F("working..."), 2000);
 }
 
 /////////////////////////////////////
