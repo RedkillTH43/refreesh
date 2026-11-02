@@ -55,10 +55,10 @@ void loop()
   uint16_t co2Concentration = 0;
   float temperature = 0.0f;
   float relativeHumidity = 0.0f;
-  char date[10] = "hh:mm:ss";
+  char time[10] = "hh:mm:ss";
 
   // Store current time
-  ds3231.now().toString(date);
+  ds3231.now().toString(time);
 
   // Set data ready status
   if (scd41.getDataReadyStatus(dataReady) != 0)
@@ -86,10 +86,10 @@ void loop()
   }
 
   // Display measured data
-  displayData(temperature, relativeHumidity, co2Concentration, date);
+  displayData(temperature, relativeHumidity, co2Concentration, time);
 
   // Handle measured data
-  handleEvent(temperature, relativeHumidity, co2Concentration, date);
+  handleEvent(temperature, relativeHumidity, co2Concentration, time);
 }
 
 /////////////////////////////////////
@@ -97,7 +97,7 @@ void loop()
 /////////////////////////////////////
 
 // Handles events
-void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
+void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
 {
   /*
   // Check if alarm 1 is ringing
@@ -133,7 +133,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     itoa(co2Concentration, co2Text, 10);
 
     // Write to file in sd card
-    writeToCard(tempText, humidityText, co2Text, date);
+    writeToCard(tempText, humidityText, co2Text, time);
     readFromCard();
 
     // Clear existing alarm 1
@@ -164,11 +164,11 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 /////////////////////////////////////
 
 // Display sensory data
-void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
+void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
 {
   // Display time to serial
   Serial.print(F("Time: "));
-  Serial.println(date);
+  Serial.println(time);
 
   // Display temperature to serial
   Serial.print(F("Temperature: "));
@@ -199,7 +199,7 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
   lcd.print(F("%"));
 
   // Wait 3 seconds
-  delay(3000);
+  delay(5000);
 
   // Display CO2 concentration to LCD
   lcd.clear();
@@ -210,10 +210,10 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
   // Display time to LCD
   lcd.setCursor(0, 1);
   lcd.print(F("Time: "));
-  lcd.print(date);
+  lcd.print(time);
 
   // Wait 3 seconds
-  delay(3000);
+  delay(5000);
 }
 
 // Display error messages
@@ -514,7 +514,6 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
     displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
   }
 
-  // Write to file
   Serial.println(F("Writing to file..."));
 
   // Write time to file
