@@ -26,9 +26,6 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
 SensirionI2cScd4x scd41;
 
-// Initialize global variable
-bool alarmExists = false;
-
 /////////////////////////////////////
 // Main Program Loop
 /////////////////////////////////////
@@ -48,7 +45,8 @@ void setup()
   delay(3000);
 
   // Set the alarm (for testing purposes)
-  setAlarm();
+  setAlarm(1);
+  setAlarm(2);
 }
 
 void loop()
@@ -104,14 +102,41 @@ void loop()
 // Handles events
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char date[])
 {
-  // Check if there is an alarm
-  if (alarmExists)
+  // Check if alarm 1 is ringing
+  if (ds3231.alarmFired(1))
   {
-    // Check if alarm is ringing
-    if (ds3231.alarmFired(1))
+    // Store current time in milliseconds
+    unsigned long time = millis();
+
+    // Loops until ALARM_DELAY is reached in milliseconds
+    do
     {
-      displayAlarm();
-    }
+      lcd.clear();
+      delay(250);
+      lcd.print(F("Alarm ringing!"));
+      delay(250);
+    } while ((millis() - time) < ALARM_DELAY);
+
+    // Clear existing alarm 1
+    ds3231.clearAlarm(1);
+  }
+
+  // Check if alarm 2 is ringing
+  if (ds3231.alarmFired(2))
+  {
+    // Declare necessary variables
+    char tempText[7], humidityText[7], co2Text[7];
+
+    // Convert values to strings
+    dtostrf(temperature, 3, 2, tempText);
+    dtostrf(relativeHumidity, 3, 2, humidityText);
+    itoa(co2Concentration, co2Text, 10);
+
+    // Write to file in sd card
+    writeToCard(tempText, humidityText, co2Text);
+
+    // Clear existing alarm 2
+    ds3231.clearAlarm(2);
   }
 
   // Check if temperature, humidity, and co2 are above normal level
@@ -140,23 +165,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 // Displays alarm ringing
 void displayAlarm()
 {
-  // Store current time in milliseconds
-  unsigned long time = millis();
-
-  // Loops until ALARM_DELAY is reached in milliseconds
-  do
-  {
-    lcd.clear();
-    delay(250);
-    lcd.print(F("Alarm ringing!"));
-    delay(250);
-  } while ((millis() - time) < ALARM_DELAY);
-
-  // Clear existing alarm
-  ds3231.clearAlarm(1);
-
-  // Sets alarm as false
-  alarmExists = false;
 }
 
 // Display sensory data
@@ -277,7 +285,6 @@ void initializeDS3231()
   // Clear alarms
   ds3231.clearAlarm(1);
   ds3231.clearAlarm(2);
-  ds3231.disableAlarm(2);
 
   // Disable SQW initially
   ds3231.writeSqwPinMode(DS3231_OFF);
@@ -289,6 +296,13 @@ void initializeDS3231()
   else {
     Serial.println("Alarm will happen in 10 seconds!");
     alarmExists = true;
+  }
+
+  // Set alarm 2
+  if (!ds3231.setAlarm2(ds3231.now() + TimeSpan(3600), DS3231_A2_Hour))
+  {
+    // Display error messages
+    displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
   }
   */
 
@@ -466,22 +480,36 @@ void readFromCard()
   dataFile.close(); // Close file
 }
 
-void setAlarm()
+void setAlarm(int alarmNum)
 {
-  // Set alarm 1
-  if (!ds3231.setAlarm1(ds3231.now() + TimeSpan(30), DS3231_A1_Second))
+  switch (alarmNum)
   {
-    Serial.println(F("Error: alarm wasn't set!"));
-  }
-  else
-  {
-    Serial.println(F("Alarm will happen in 10 seconds!"));
-    alarmExists = true; // Sets alarm as true
+  case 1:
+    // Set alarm 1
+    if (!ds3231.setAlarm1(ds3231.now() + TimeSpan(30), DS3231_A1_Second))
+    {
+      // Display error messages
+      displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
+    }
+    break;
+
+  case 2:
+    // Set alarm 2
+    if (!ds3231.setAlarm2(ds3231.now() + TimeSpan(3600), DS3231_A2_Hour))
+    {
+      // Display error messages
+      displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
+    }
+    break;
+
+  default:
+    displayError(F("DS3231 failed"), F("Error: invalid alarm number."));
+    break;
   }
 }
 
 // Write data to sd card
-void writeToCard(char data[20])
+void writeToCard(char tempText[7], char humidityText[7], char co2Text[7])
 {
   // Initialize File object
   File dataFile;
@@ -498,7 +526,18 @@ void writeToCard(char data[20])
 
   // Write to file
   Serial.println(F("Writing to file..."));
-  dataFile.println(data);
+
+  // Write temperature to file
+  dataFile.print(tempText);
+  dataFile.print(F(", "));
+
+  // Write humidity to file
+  dataFile.print(humidityText);
+  dataFile.print(F(", "));
+
+  // Write co2 to file
+  dataFile.println(co2Text);
   dataFile.close();
+
   Serial.println(F("Done."));
 }
