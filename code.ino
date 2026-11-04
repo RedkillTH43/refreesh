@@ -30,6 +30,9 @@ SensirionI2cScd4x scd41;
 
 // Initialize flags
 volatile byte isAuto;
+unsigned long previousMillis = 0;
+unsigned long previousMeasurement = 0;
+bool hasDisplay = false;
 
 /////////////////////////////////////
 // Main Program Loop
@@ -53,6 +56,7 @@ void loop()
   // Initialize necessary variables
   bool dataReady = false;
   uint16_t co2Concentration = 0;
+  unsigned long currentMeasurement = millis();
   float temperature = 0.0f;
   float relativeHumidity = 0.0f;
   char time[10] = "hh:mm:ss";
@@ -60,29 +64,27 @@ void loop()
   // Store current time
   ds3231.now().toString(time);
 
-  // Set data ready status
-  if (scd41.getDataReadyStatus(dataReady) != 0)
+  // Check if data is ready to be measured
+  if ((currentMeasurement - previousMeasurement) >= 5000)
   {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
-  }
+    previousMeasurement = currentMeasurement;
 
-  // Loop while data is not ready
-  while (!dataReady)
-  {
-    delay(100);
+    // Set data ready status
     if (scd41.getDataReadyStatus(dataReady) != 0)
     {
       // Display error messages
       displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
     }
-  }
 
-  // Read and set measurement values
-  if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
+    if (dataReady)
+    {
+      // Read and set measurement values
+      if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
+      {
+        // Display error messages
+        displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
+      }
+    }
   }
 
   // Handle measured data
@@ -142,9 +144,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
   if (isAuto == LOW)
   {
-    Serial.println(F("Now in Auto mode..."));
-    Serial.println(digitalRead(SLIDE_SWITCH_PIN));
-
     // Turn on yellow LED for Auto indication
     digitalWrite(YELLOW_LED_PIN, HIGH);
 
@@ -168,9 +167,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
   }
   else
   {
-    Serial.println(F("Now in Manual mode..."));
-    Serial.println(digitalRead(SLIDE_SWITCH_PIN));
-
     bool isOn = digitalRead(ROCKER_SWITCH_PIN);
 
     // Turn off yellow LED for Manual indication
@@ -179,7 +175,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     // Check if rocker switch is on and turn relay on
     if (isOn == LOW)
     {
-      Serial.println(F("Switch ON..."));
       digitalWrite(RELAY_PIN, LOW);
       digitalWrite(GREEN_LED_PIN, HIGH);
       digitalWrite(RED_LED_PIN, LOW);
@@ -188,7 +183,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     // Check if rocker switch is off and turn relay off
     else
     {
-      Serial.println(F("Switch OFF..."));
       digitalWrite(RELAY_PIN, HIGH);
       digitalWrite(GREEN_LED_PIN, LOW);
       digitalWrite(RED_LED_PIN, HIGH);
@@ -203,54 +197,62 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 // Display sensory data
 void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
 {
-  // Display time to serial
-  Serial.print(F("Time: "));
-  Serial.println(time);
+  unsigned long currentMillis = millis();
+  unsigned long elapsedTime = currentMillis - previousMillis;
 
-  // Display temperature to serial
-  Serial.print(F("Temperature: "));
-  Serial.print(temperature);
-  Serial.println(F("C"));
+  if (elapsedTime >= 5000)
+  {
+    if (!hasDisplay)
+    {
+      // Display temperature to LCD
+      lcd.clear();
+      lcd.print(F("Temp: "));
+      lcd.print(temperature);
+      lcd.print(char(223));
+      lcd.print(F("C"));
 
-  // Display humidity to serial
-  Serial.print(F("Humidity: "));
-  Serial.print(relativeHumidity);
-  Serial.println(F("%"));
+      // Display humidity to LCD
+      lcd.setCursor(0, 1);
+      lcd.print(F("Humidity: "));
+      lcd.print(relativeHumidity);
+      lcd.print(F("%"));
 
-  // Display CO2 to serial
-  Serial.print(F("CO2 Level: "));
-  Serial.print(co2Concentration);
-  Serial.println(F("PPM"));
+      // Display temperature to serial
+      Serial.print(F("Temperature: "));
+      Serial.print(temperature);
+      Serial.println(F("C"));
 
-  // Display temperature to LCD
-  lcd.clear();
-  lcd.print(F("Temp: "));
-  lcd.print(temperature);
-  lcd.print(char(223));
-  lcd.print(F("C"));
+      // Display humidity to serial
+      Serial.print(F("Humidity: "));
+      Serial.print(relativeHumidity);
+      Serial.println(F("%"));
+    }
+    else
+    {
+      // Display CO2 concentration to LCD
+      lcd.clear();
+      lcd.print(F("CO2: "));
+      lcd.print(co2Concentration);
+      lcd.print(F("PPM"));
 
-  // Display humidity to LCD
-  lcd.setCursor(0, 1);
-  lcd.print(F("Humidity: "));
-  lcd.print(relativeHumidity);
-  lcd.print(F("%"));
+      // Display time to LCD
+      lcd.setCursor(0, 1);
+      lcd.print(F("Time: "));
+      lcd.print(time);
 
-  // Wait 3 seconds
-  delay(5000);
+      // Display CO2 to serial
+      Serial.print(F("CO2 Level: "));
+      Serial.print(co2Concentration);
+      Serial.println(F("PPM"));
 
-  // Display CO2 concentration to LCD
-  lcd.clear();
-  lcd.print(F("CO2: "));
-  lcd.print(co2Concentration);
-  lcd.print(F("PPM"));
+      // Display time to serial
+      Serial.print(F("Time: "));
+      Serial.println(time);
+    }
 
-  // Display time to LCD
-  lcd.setCursor(0, 1);
-  lcd.print(F("Time: "));
-  lcd.print(time);
-
-  // Wait 3 seconds
-  delay(5000);
+    previousMillis = currentMillis;
+    hasDisplay = !hasDisplay;
+  }
 }
 
 // Display error messages
@@ -264,7 +266,7 @@ void displayError(String lcdMessage, String serialMessage)
 }
 
 // Display messages for setup
-void displayMessages(String row1Message, String row2Message, int milliseconds)
+void displayMessages(String row1Message, String row2Message, unsigned long milliseconds)
 {
   lcd.clear();
   lcd.print(row1Message);
@@ -559,8 +561,13 @@ void setAlarm(int alarmNum)
 // Toggle Auto to Manual and vice versa
 void toggleAuto()
 {
-  isAuto = digitalRead(SLIDE_SWITCH_PIN);
   isAuto = !isAuto;
+}
+
+// Wait for given amount of milliseconds
+void wait(unsigned long currentTime, int timeToWait)
+{
+  return;
 }
 
 // Write data to sd card
