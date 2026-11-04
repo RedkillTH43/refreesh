@@ -9,6 +9,8 @@
 
 // Define component pins
 #define CLOCK_INTERRUPT_PIN 2
+#define SLIDE_SWITCH_PIN 3
+#define ROCKER_SWITCH_PIN 4
 #define GREEN_LED_PIN 5
 #define YELLOW_LED_PIN 6
 #define RED_LED_PIN 7
@@ -26,6 +28,9 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
 SensirionI2cScd4x scd41;
 
+// Initialize flags
+volatile byte isAuto;
+
 /////////////////////////////////////
 // Main Program Loop
 /////////////////////////////////////
@@ -34,12 +39,7 @@ void setup()
 {
   // Initialize components
   initializeArduino();
-  initializeLCD();
-  initializeRelay();
-  initializeLED();
-  initializeSCD41();
-  initializeDS3231();
-  initializeSDCard();
+  initializeComponents();
 
   // Wait 3 seconds to simulate startup
   delay(3000);
@@ -85,11 +85,11 @@ void loop()
     displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
   }
 
-  // Display measured data
-  displayData(temperature, relativeHumidity, co2Concentration, time);
-
   // Handle measured data
   handleEvent(temperature, relativeHumidity, co2Concentration, time);
+
+  // Display measured data
+  displayData(temperature, relativeHumidity, co2Concentration, time);
 }
 
 /////////////////////////////////////
@@ -140,22 +140,59 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.clearAlarm(1);
   }
 
-  // Check if temperature, humidity, and co2 are above normal level
-  if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
+  if (isAuto == LOW)
   {
-    // Turn relay, yellow/green ON with red OFF
-    digitalWrite(RELAY_PIN, LOW);
-    digitalWrite(GREEN_LED_PIN, HIGH);
+    Serial.println(F("Now in Auto mode..."));
+    Serial.println(digitalRead(SLIDE_SWITCH_PIN));
+
+    // Turn on yellow LED for Auto indication
     digitalWrite(YELLOW_LED_PIN, HIGH);
-    digitalWrite(RED_LED_PIN, LOW);
+
+    // Check if temperature, humidity, and co2 are above normal level
+    if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
+    {
+      // Turn relay, yellow/green ON with red OFF
+      digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, HIGH);
+      digitalWrite(YELLOW_LED_PIN, HIGH);
+      digitalWrite(RED_LED_PIN, LOW);
+    }
+    else
+    {
+      // Turn relay, yellow/red ON with green OFF
+      digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(YELLOW_LED_PIN, HIGH);
+      digitalWrite(RED_LED_PIN, HIGH);
+    }
   }
   else
   {
-    // Turn relay, yellow/red ON with green OFF
-    digitalWrite(RELAY_PIN, HIGH);
-    digitalWrite(GREEN_LED_PIN, LOW);
-    digitalWrite(YELLOW_LED_PIN, HIGH);
-    digitalWrite(RED_LED_PIN, HIGH);
+    Serial.println(F("Now in Manual mode..."));
+    Serial.println(digitalRead(SLIDE_SWITCH_PIN));
+
+    bool isOn = digitalRead(ROCKER_SWITCH_PIN);
+
+    // Turn off yellow LED for Manual indication
+    digitalWrite(YELLOW_LED_PIN, LOW);
+
+    // Check if rocker switch is on and turn relay on
+    if (isOn == LOW)
+    {
+      Serial.println(F("Switch ON..."));
+      digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, HIGH);
+      digitalWrite(RED_LED_PIN, LOW);
+    }
+
+    // Check if rocker switch is off and turn relay off
+    else
+    {
+      Serial.println(F("Switch OFF..."));
+      digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(RED_LED_PIN, HIGH);
+    }
   }
 }
 
@@ -239,6 +276,18 @@ void displayMessages(String row1Message, String row2Message, int milliseconds)
 /////////////////////////////////////
 // Initialize Functions
 /////////////////////////////////////
+
+// Initialize all components
+void initializeComponents()
+{
+  initializeLCD();
+  initializeSwitches();
+  initializeRelay();
+  initializeLED();
+  initializeSCD41();
+  initializeDS3231();
+  initializeSDCard();
+}
 
 // Prepare Arduino on startup
 void initializeArduino()
@@ -436,6 +485,15 @@ void initializeSDCard()
   displayMessages(F("SD card is"), F("working..."), 0);
 }
 
+// Prepare switches on startup
+void initializeSwitches()
+{
+  pinMode(SLIDE_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(ROCKER_SWITCH_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(SLIDE_SWITCH_PIN), toggleAuto, CHANGE);
+  isAuto = digitalRead(SLIDE_SWITCH_PIN);
+}
+
 /////////////////////////////////////
 // Other Functions
 /////////////////////////////////////
@@ -496,6 +554,13 @@ void setAlarm(int alarmNum)
     displayError(F("DS3231 failed"), F("Error: invalid alarm number."));
     break;
   }
+}
+
+// Toggle Auto to Manual and vice versa
+void toggleAuto()
+{
+  isAuto = digitalRead(SLIDE_SWITCH_PIN);
+  isAuto = !isAuto;
 }
 
 // Write data to sd card
