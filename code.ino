@@ -9,28 +9,28 @@
 #include <Wire.h>
 
 // Define component pins
-#define CLOCK_INTERRUPT_PIN 2
-#define SLIDE_SWITCH_PIN 3
-#define ROCKER_SWITCH_PIN 4
-#define GREEN_LED_PIN 5
-#define YELLOW_LED_PIN 6
-#define RED_LED_PIN 7
-#define RELAY_PIN 9
-#define CHIP_SELECT_PIN 10
+const byte CLOCK_INTERRUPT_PIN = 2;
+const byte SLIDE_SWITCH_PIN = 3;
+const byte ROCKER_SWITCH_PIN = 4;
+const byte GREEN_LED_PIN = 5;
+const byte YELLOW_LED_PIN = 6;
+const byte RED_LED_PIN = 7;
+const byte RELAY_PIN = 9;
+const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
-#define FILE_NAME "data.csv"
+const char FILE_NAME[] = "data.csv";
+
+// Initialize flags
+unsigned long previousMillis = 0;
+unsigned long previousMeasurement = 0;
+bool hasDisplay = false;
+volatile byte isAuto;
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
 SensirionI2cScd4x scd41;
-
-// Initialize flags
-volatile byte isAuto;
-unsigned long previousMillis = 0;
-unsigned long previousMeasurement = 0;
-bool hasDisplay = false;
 
 /////////////////////////////////////
 // Main Program Loop
@@ -132,7 +132,6 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     writeToCard(tempText, humidityText, co2Text, time);
-    readFromCard();
 
     // Clear this alarm
     ds3231.clearAlarm(2);
@@ -221,16 +220,6 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
       lcd.print(F("Humidity: "));
       lcd.print(relativeHumidity);
       lcd.print(F("%"));
-
-      // Display temperature to serial
-      Serial.print(F("Temperature: "));
-      Serial.print(temperature);
-      Serial.println(F("C"));
-
-      // Display humidity to serial
-      Serial.print(F("Humidity: "));
-      Serial.print(relativeHumidity);
-      Serial.println(F("%"));
     }
 
     // Check if LCD has displayed first info
@@ -246,15 +235,6 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
       lcd.setCursor(0, 1);
       lcd.print(F("Time: "));
       lcd.print(time);
-
-      // Display CO2 to serial
-      Serial.print(F("CO2 Level: "));
-      Serial.print(co2Concentration);
-      Serial.println(F("PPM"));
-
-      // Display time to serial
-      Serial.print(F("Time: "));
-      Serial.println(time);
     }
 
     // Reset necessary variables
@@ -266,9 +246,6 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
 // Display error messages
 void displayError(String lcdMessage, String serialMessage)
 {
-  // Print error message to Serial
-  Serial.println(serialMessage);
-
   // Print error message to LCD
   lcd.clear();
   lcd.print(lcdMessage);
@@ -317,15 +294,12 @@ void initializeArduino()
   {
     delay(100);
   }
-  Serial.println(F("Initializing Arduino..."));
   Wire.begin();
 }
 
 // Prepare DS3231 on startup
 void initializeDS3231()
 {
-  Serial.println(F("Initializing DS3231..."));
-
   // Test I2C connection
   if (!ds3231.begin())
   {
@@ -363,8 +337,6 @@ void initializeDS3231()
 // Prepare LCD on startup
 void initializeLCD()
 {
-  Serial.println(F("Initializing LCD1602..."));
-
   // Initialize the LCD
   lcd.init();
   lcd.backlight();
@@ -379,8 +351,6 @@ void initializeLCD()
 // Prepare LEDs on startup
 void initializeLED()
 {
-  Serial.println(F("Initializing LEDs..."));
-
   // Configure pin modes
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(YELLOW_LED_PIN, OUTPUT);
@@ -398,8 +368,6 @@ void initializeLED()
 // Prepare relay on startup
 void initializeRelay()
 {
-  Serial.println(F("Initializing relay..."));
-
   // Configure pin mode
   pinMode(RELAY_PIN, OUTPUT);
 
@@ -413,8 +381,6 @@ void initializeRelay()
 // Prepare SCD41 on startup
 void initializeSCD41()
 {
-  Serial.println(F("Initializing SCD41..."));
-
   // Declare necessary variables
   uint64_t serialNumber = 0;
   uint16_t testResult = 0;
@@ -462,17 +428,6 @@ void initializeSCD41()
     displayError(F("SCD 41 failed"), F("Error: self-test failed."));
   }
 
-  // Read out information about the sensor
-  if (scd41.getSerialNumber(serialNumber) != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: getSerialNumber() failed."));
-  }
-
-  // Print serial number
-  Serial.print("Serial Number: ");
-  printUint64(serialNumber);
-
   // Start measuring the environment
   if (scd41.startPeriodicMeasurement() != 0)
   {
@@ -487,8 +442,6 @@ void initializeSCD41()
 // Prepare SD Card on startup
 void initializeSDCard()
 {
-  Serial.println(F("Initializing SD card..."));
-
   // Check if there is no connection with sd card
   if (!SD.begin(CHIP_SELECT_PIN))
   {
@@ -563,41 +516,6 @@ void goToSleep()
 void onAlarm()
 {
   return;
-}
-
-// Helper function to print serial number
-void printUint64(uint64_t &value)
-{
-  Serial.print("0x");
-  Serial.print((uint32_t)(value >> 32), HEX);
-  Serial.println((uint32_t)(value & 0xFFFFFFFF), HEX);
-}
-
-// Read sd card contents
-void readFromCard()
-{
-  // Initialize File object
-  File dataFile;
-
-  // Open file for reading
-  dataFile = SD.open(FILE_NAME, FILE_READ);
-
-  // Check if file does not exist
-  if (!dataFile)
-  {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
-  }
-
-  // Loop while data exists in file
-  while (dataFile.available())
-  {
-    // Read file and print to Serial
-    Serial.write(dataFile.read());
-  }
-
-  // Close file
-  dataFile.close();
 }
 
 // Reset all components after waking up
@@ -705,8 +623,6 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
     displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
   }
 
-  Serial.println(F("Writing to file..."));
-
   // Write time to file
   dataFile.print(time);
   dataFile.print(F(", "));
@@ -722,6 +638,4 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
   // Write co2 to file
   dataFile.println(co2Text);
   dataFile.close();
-
-  Serial.println(F("Done."));
 }
