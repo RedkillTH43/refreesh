@@ -9,28 +9,28 @@
 #include <Wire.h>
 
 // Define component pins
-#define CLOCK_INTERRUPT_PIN 2
-#define SLIDE_SWITCH_PIN 3
-#define ROCKER_SWITCH_PIN 4
-#define GREEN_LED_PIN 5
-#define YELLOW_LED_PIN 6
-#define RED_LED_PIN 7
-#define RELAY_PIN 9
-#define CHIP_SELECT_PIN 10
+const byte CLOCK_INTERRUPT_PIN = 2;
+const byte SLIDE_SWITCH_PIN = 3;
+const byte ROCKER_SWITCH_PIN = 4;
+const byte GREEN_LED_PIN = 5;
+const byte YELLOW_LED_PIN = 6;
+const byte RED_LED_PIN = 7;
+const byte RELAY_PIN = 9;
+const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
-#define FILE_NAME "data.csv"
+const char FILE_NAME[] = "data.csv";
+
+// Initialize flags
+unsigned long previousMillis = 0;
+unsigned long previousMeasurement = 0;
+bool hasDisplay = false;
+volatile byte isAuto;
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 RTC_DS3231 ds3231;
 SensirionI2cScd4x scd41;
-
-// Initialize flags
-volatile byte isAuto;
-unsigned long previousMillis = 0;
-unsigned long previousMeasurement = 0;
-bool hasDisplay = false;
 
 /////////////////////////////////////
 // Main Program Loop
