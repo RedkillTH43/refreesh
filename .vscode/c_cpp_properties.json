@@ -6,6 +6,7 @@
             "compilerPath": "/home/argos/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/avr-g++",
             "compilerArgs": [
                 "-w",
+                "-mmcu=atmega328p",
                 "-std=gnu++11",
                 "-fpermissive",
                 "-fno-exceptions",
@@ -20,6 +21,7 @@
                 "/home/argos/.arduino15/packages/arduino/hardware/avr/1.8.8/variants/standard",
                 "/home/argos/Arduino/libraries/LiquidCrystal_I2C",
                 "/home/argos/.arduino15/packages/arduino/hardware/avr/1.8.8/libraries/Wire/src",
+                "/home/argos/Arduino/libraries/LowPower_LowPowerLab",
                 "/home/argos/Arduino/libraries/RTClib/src",
                 "/home/argos/Arduino/libraries/Adafruit_BusIO",
                 "/home/argos/Arduino/libraries/SD/src",
