@@ -20,10 +20,12 @@ const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
+const long MEASURE_INTERVAL = 5000L;
+const long DISPLAY_INTERVAL = 5000L;
 
 // Initialize flags
-unsigned long previousMillis = 0;
-unsigned long previousMeasurement = 0;
+unsigned long previousMillis = 0L;
+unsigned long previousMeasurement = 0L;
 bool hasDisplay = false;
 volatile byte isAuto;
 
@@ -38,12 +40,11 @@ SensirionI2cScd4x scd41;
 
 void setup()
 {
-  // Initialize Arduino and components
-  initializeArduino();
+  // Initialize all components
   initializeComponents();
 
-  // Wait 3 seconds to simulate startup
-  delay(3000);
+  // Display success messages if working
+  displaySuccessMessages();
 }
 
 void loop()
@@ -52,7 +53,6 @@ void loop()
   bool dataReady = false;
   bool isActive = ds3231.now().hour() >= 6 && ds3231.now().hour() <= 18;
   uint16_t co2Concentration = 0;
-  int measureInterval = 5000;
   unsigned long currentMeasurement = millis();
   float temperature = 0.0f;
   float relativeHumidity = 0.0f;
@@ -72,7 +72,7 @@ void loop()
   ds3231.now().toString(time);
 
   // Check if data is ready to be measured
-  if ((currentMeasurement - previousMeasurement) >= measureInterval)
+  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL)
   {
     previousMeasurement = currentMeasurement;
 
@@ -83,6 +83,7 @@ void loop()
       displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
     }
 
+    // Check if data is ready to be measured
     if (dataReady)
     {
       // Read and set measurement values
@@ -108,18 +109,18 @@ void loop()
 // Handles events
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
 {
-  // Check if alarm 1 for 12-hour interval of sleep is ringing
+  // Check if alarm 1 for 10-second interval of sleep is ringing
   if (ds3231.alarmFired(1))
   {
     // Clear and disable this alarm
     ds3231.clearAlarm(1);
     ds3231.disableAlarm(1);
 
-    // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    // Set a new alarm for 1-minute interval of writing to SD card
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
-  // Check if alarm 2 for 1-hour interval writing to SD card is ringing
+  // Check if alarm 2 for 1-minute interval writing to SD card is ringing
   if (ds3231.alarmFired(2))
   {
     // Declare necessary variables
@@ -132,13 +133,15 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     writeToCard(tempText, humidityText, co2Text, time);
+
+    // Display contents of sd card to Serial
     readFromCard();
 
     // Clear this alarm
     ds3231.clearAlarm(2);
 
-    // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    // Set another alarm for 1-minute interval
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
   // Check if in Auto Mode
@@ -150,24 +153,21 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     // Check if temperature, humidity, and co2 are above normal level
     if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
     {
-      // Turn relay ON, red OFF, and green ON
-      digitalWrite(RELAY_PIN, LOW);
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, HIGH);
+      turnFanOn();
     }
+
+    // Check if temperature, humidity, and co2 are within normal level
     else
     {
-      // Turn relay OFF, red ON, and green OFF
-      digitalWrite(RELAY_PIN, HIGH);
-      digitalWrite(RED_LED_PIN, HIGH);
-      digitalWrite(GREEN_LED_PIN, LOW);
+      turnFanOff();
     }
   }
 
   // Check if in Manual Mode
   else
   {
-    bool isOn = digitalRead(ROCKER_SWITCH_PIN);
+    // Store the current state of rocker switch
+    byte isOn = digitalRead(ROCKER_SWITCH_PIN);
 
     // Turn off yellow LED for Manual indication
     digitalWrite(YELLOW_LED_PIN, LOW);
@@ -175,19 +175,13 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     // Check if rocker switch is on and turn relay on
     if (isOn == LOW)
     {
-      // Turn relay ON, red OFF, and green ON
-      digitalWrite(RELAY_PIN, LOW);
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, HIGH);
+      turnFanOn();
     }
 
     // Check if rocker switch is off and turn relay off
     else
     {
-      // Turn relay OFF, red ON, and green OFF
-      digitalWrite(RELAY_PIN, HIGH);
-      digitalWrite(RED_LED_PIN, HIGH);
-      digitalWrite(GREEN_LED_PIN, LOW);
+      turnFanOff();
     }
   }
 }
@@ -204,7 +198,7 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
   unsigned long elapsedTime = currentMillis - previousMillis;
 
   // Check if elapsed time is 5 seconds
-  if (elapsedTime >= 5000)
+  if (elapsedTime >= DISPLAY_INTERVAL)
   {
     // Check if LCD has not displayed first info
     if (!hasDisplay)
@@ -293,6 +287,20 @@ void displayMessages(String row1Message, String row2Message, unsigned long milli
   delay(milliseconds);
 }
 
+// Display success messages upon startup
+void displaySuccessMessages()
+{
+  displayMessages(F("Arduino is"), F("working..."), 1000);
+  displayMessages(F("LCD1602 is"), F("working..."), 1000);
+  displayMessages(F("Switches are"), F("working..."), 1000);
+  displayMessages(F("Relay is"), F("working..."), 1000);
+  displayMessages(F("LEDs are"), F("working..."), 1000);
+  displayMessages(F("SCD41 is"), F("working..."), 1000);
+  displayMessages(F("DS3231 is"), F("working..."), 1000);
+  displayMessages(F("SD card is"), F("working..."), 1000);
+  displayMessages(F("All components"), F("are working!"), 3000);
+}
+
 /////////////////////////////////////
 // Initialize Functions
 /////////////////////////////////////
@@ -300,6 +308,8 @@ void displayMessages(String row1Message, String row2Message, unsigned long milli
 // Initialize all components
 void initializeComponents()
 {
+  displayMessages(F("Testing"), F("components..."), 0);
+  initializeArduino();
   initializeLCD();
   initializeSwitches();
   initializeRelay();
@@ -353,11 +363,8 @@ void initializeDS3231()
   // Disable SQW pin to allow for alarm interrupt
   ds3231.writeSqwPinMode(DS3231_OFF);
 
-  // Set alarm 2 for 1 hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
-
-  // Display success message to LCD
-  displayMessages(F("DS3231 is"), F("working..."), 1000);
+  // Set alarm 2 for 1-minute interval of writing to SD card
+  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
 }
 
 // Prepare LCD on startup
@@ -369,11 +376,6 @@ void initializeLCD()
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
-
-  // Display success messages to LCD
-  displayMessages(F("Testing"), F("components..."), 5000);
-  displayMessages(F("Arduino is"), F("working..."), 1000);
-  displayMessages(F("LCD1602 is"), F("working..."), 1000);
 }
 
 // Prepare LEDs on startup
@@ -390,9 +392,6 @@ void initializeLED()
   digitalWrite(RED_LED_PIN, HIGH);
   digitalWrite(YELLOW_LED_PIN, HIGH);
   digitalWrite(GREEN_LED_PIN, HIGH);
-
-  // Display success message to LCD
-  displayMessages(F("LEDs are"), F("working..."), 1000);
 }
 
 // Prepare relay on startup
@@ -405,9 +404,6 @@ void initializeRelay()
 
   // Set relay HIGH, turning it OFF
   digitalWrite(RELAY_PIN, HIGH);
-
-  // Display success message to LCD
-  displayMessages(F("Relay is"), F("working..."), 1000);
 }
 
 // Prepare SCD41 on startup
@@ -479,9 +475,6 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startPeriodicMeasurement() failed."));
   }
-
-  // Display success message to LCD
-  displayMessages(F("SCD41 is"), F("working..."), 0);
 }
 
 // Prepare SD Card on startup
@@ -495,9 +488,6 @@ void initializeSDCard()
     // Display error messages
     displayError(F("SD card failed"), F("Error: SD card failed to initialize."));
   }
-
-  // Display success message to LCD
-  displayMessages(F("SD card is"), F("working..."), 2000);
 }
 
 // Prepare switches on startup
@@ -552,8 +542,8 @@ void goToSleep()
   ds3231.clearAlarm(2);
   ds3231.disableAlarm(2);
 
-  // Set alarm to wake up Arduino after 12 hours
-  setAlarm(1, ds3231.now() + TimeSpan(0, 12, 0, 0), 'h');
+  // Set alarm to wake up Arduino after 10 seconds
+  setAlarm(1, ds3231.now() + TimeSpan(0, 0, 0, 10), 's');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -653,6 +643,28 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
     }
     break;
 
+  // Set alarm in minutes
+  case 'm':
+    // Set alarm 1
+    if (alarmNum == 1)
+    {
+      if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Minute))
+      {
+        // Display error messages
+        displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
+      }
+    }
+
+    // Set alarm 2
+    else
+    {
+      if (!ds3231.setAlarm2(alarmTime, DS3231_A2_Minute))
+      {
+        // Display error messages
+        displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
+      }
+    }
+
   // Set alarm in hours
   case 'h':
     // Set alarm 1
@@ -687,6 +699,22 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
 void toggleAuto()
 {
   isAuto = !isAuto;
+}
+
+// Turn relay OFF, red ON, and green OFF
+void turnFanOff()
+{
+  digitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(RED_LED_PIN, HIGH);
+  digitalWrite(GREEN_LED_PIN, LOW);
+}
+
+// Turn relay ON, red OFF, and green ON
+void turnFanOn()
+{
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(RED_LED_PIN, LOW);
+  digitalWrite(GREEN_LED_PIN, HIGH);
 }
 
 // Write data to sd card
