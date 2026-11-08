@@ -20,19 +20,12 @@ const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
-<<<<<<< HEAD
-
-// Initialize flags
-unsigned long previousMillis = 0;
-unsigned long previousMeasurement = 0;
-=======
-const long MEASURE_INTERVAL = 5000L;
+const long MEASURE_INTERVAL = 10000L;
 const long DISPLAY_INTERVAL = 5000L;
 
 // Initialize flags
 unsigned long previousMillis = 0L;
 unsigned long previousMeasurement = 0L;
->>>>>>> testing_branch
 bool hasDisplay = false;
 volatile byte isAuto;
 
@@ -51,7 +44,7 @@ void setup()
   initializeComponents();
 
   // Display success messages if working
-  displaySuccessMessages();
+  displayMessages(F("All components"), F("are working!"));
 }
 
 void loop()
@@ -90,8 +83,17 @@ void loop()
       displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
     }
 
+    // Check if data is not ready to be measured
+    if (!dataReady)
+    {
+      // Set variables to previous measurement
+      co2Concentration = co2Concentration;
+      temperature = temperature;
+      relativeHumidity = relativeHumidity;
+    }
+
     // Check if data is ready to be measured
-    if (dataReady)
+    else
     {
       // Read and set measurement values
       if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
@@ -116,18 +118,18 @@ void loop()
 // Handles events
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
 {
-  // Check if alarm 1 for 10-second interval of sleep is ringing
+  // Check if alarm 1 for 12-hour interval of sleep is ringing
   if (ds3231.alarmFired(1))
   {
     // Clear and disable this alarm
     ds3231.clearAlarm(1);
     ds3231.disableAlarm(1);
 
-    // Set a new alarm for 1-minute interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    // Set a new alarm for 1-hour interval of writing to SD card
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
-  // Check if alarm 2 for 1-minute interval writing to SD card is ringing
+  // Check if alarm 2 for 1-hour interval writing to SD card is ringing
   if (ds3231.alarmFired(2))
   {
     // Declare necessary variables
@@ -140,18 +142,12 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     writeToCard(tempText, humidityText, co2Text, time);
-<<<<<<< HEAD
-=======
-
-    // Display contents of sd card to Serial
-    readFromCard();
->>>>>>> testing_branch
 
     // Clear this alarm
     ds3231.clearAlarm(2);
 
-    // Set another alarm for 1-minute interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    // Set another alarm for 1-hour interval
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
   // Check if in Auto Mode
@@ -255,13 +251,16 @@ void displayError(String lcdMessage, String serialMessage)
   lcd.clear();
   lcd.print(lcdMessage);
 
+  // Print error message to Serial
+  Serial.println(serialMessage);
+
   // Infinite loop to stop the program
   while (1)
     ;
 }
 
 // Display messages for setup
-void displayMessages(String row1Message, String row2Message, unsigned long milliseconds)
+void displayMessages(String row1Message, String row2Message)
 {
   // Display to first row of LCD
   lcd.clear();
@@ -270,23 +269,6 @@ void displayMessages(String row1Message, String row2Message, unsigned long milli
   // Display to second row of LCD
   lcd.setCursor(0, 1);
   lcd.print(row2Message);
-
-  // Wait for specified milliseconds
-  delay(milliseconds);
-}
-
-// Display success messages upon startup
-void displaySuccessMessages()
-{
-  displayMessages(F("Arduino is"), F("working..."), 1000);
-  displayMessages(F("LCD1602 is"), F("working..."), 1000);
-  displayMessages(F("Switches are"), F("working..."), 1000);
-  displayMessages(F("Relay is"), F("working..."), 1000);
-  displayMessages(F("LEDs are"), F("working..."), 1000);
-  displayMessages(F("SCD41 is"), F("working..."), 1000);
-  displayMessages(F("DS3231 is"), F("working..."), 1000);
-  displayMessages(F("SD card is"), F("working..."), 1000);
-  displayMessages(F("All components"), F("are working!"), 3000);
 }
 
 /////////////////////////////////////
@@ -296,9 +278,9 @@ void displaySuccessMessages()
 // Initialize all components
 void initializeComponents()
 {
-  displayMessages(F("Testing"), F("components..."), 0);
   initializeArduino();
   initializeLCD();
+  displayMessages(F("Testing"), F("components..."));
   initializeSwitches();
   initializeRelay();
   initializeLED();
@@ -311,10 +293,6 @@ void initializeComponents()
 void initializeArduino()
 {
   Serial.begin(9600);
-  while (!Serial)
-  {
-    delay(100);
-  }
   Wire.begin();
 }
 
@@ -348,8 +326,8 @@ void initializeDS3231()
   // Disable SQW pin to allow for alarm interrupt
   ds3231.writeSqwPinMode(DS3231_OFF);
 
-  // Set alarm 2 for 1-minute interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+  // Set alarm 2 for 1-hour interval of writing to SD card
+  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 }
 
 // Prepare LCD on startup
@@ -402,7 +380,6 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: wakeUp() failed."));
   }
-  delay(30); // Wait for the sensor
 
   // Stop measuring the environment
   if (scd41.stopPeriodicMeasurement() != 0)
@@ -410,7 +387,6 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: stopPeriodicMeasurement() failed."));
   }
-  delay(500); // Wait for the sensor
 
   // Reinitialize SCD41
   if (scd41.reinit() != 0)
@@ -418,7 +394,6 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: reinit() failed."));
   }
-  delay(30); // Wait for the sensor
 
   // Test the component's functionality
   if (scd41.performSelfTest(testResult) != 0)
@@ -426,7 +401,6 @@ void initializeSCD41()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: performSelfTest() failed."));
   }
-  delay(10000); // Wait for the sensor
 
   // Check result of self-test
   if (testResult != 0)
@@ -483,8 +457,6 @@ void goToSleep()
     displayError(F("SCD41 failed"), F("Error: stopPeriodicMeasurement failed."));
   }
 
-  delay(500); // Wait for the sensor
-
   // Start SCD41 new low power periodic measurement
   if (!scd41.startLowPowerPeriodicMeasurement())
   {
@@ -506,8 +478,8 @@ void goToSleep()
   ds3231.clearAlarm(2);
   ds3231.disableAlarm(2);
 
-  // Set alarm to wake up Arduino after 10 seconds
-  setAlarm(1, ds3231.now() + TimeSpan(0, 0, 0, 10), 's');
+  // Set alarm to wake up Arduino after 12 hours
+  setAlarm(1, ds3231.now() + TimeSpan(0, 12, 0, 10), 'h');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -543,7 +515,6 @@ void resetComponents()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: stopPeriodicMeasurement failed."));
   }
-  delay(500); // Wait for the sensor
 
   // Start SCD41 new periodic measurement
   if (!scd41.startPeriodicMeasurement())
@@ -551,9 +522,6 @@ void resetComponents()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startPeriodicMeasurement failed."));
   }
-
-  // Wait 5 seconds for initial measurement
-  delay(5000);
 }
 
 // Set alarm based on specified details
