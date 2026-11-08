@@ -20,8 +20,8 @@ const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
-const long MEASURE_INTERVAL = 10000L;
 const long DISPLAY_INTERVAL = 5000L;
+const long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 
 // Initialize flags
 unsigned long previousMillis = 0L;
@@ -367,7 +367,6 @@ void initializeRelay()
 void initializeSCD41()
 {
   // Declare necessary variables
-  uint64_t serialNumber = 0;
   uint16_t testResult = 0;
 
   // Connect to I2C
@@ -587,7 +586,7 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
 
   default:
     // Display error messages
-    displayError(F("Invalid alarm."), F("Error: invalid alarm mode set."));
+    displayError(F("DS3231 failed"), F("Error: invalid alarm mode set."));
     break;
   }
 }
