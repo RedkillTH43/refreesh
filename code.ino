@@ -22,6 +22,7 @@ const byte CHIP_SELECT_PIN = 10;
 const char FILE_NAME[] = "data.csv";
 const unsigned long DISPLAY_INTERVAL = 5000L;
 const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
+const unsigned long DELAY_INTERVAL = 100L;
 
 // Initialize flags
 volatile byte isAuto;
@@ -53,15 +54,17 @@ void setup()
 void loop()
 {
   // Initialize necessary variables
+  uint8_t currentHour = ds3231.now().hour();
   bool dataReady = false;
-  bool isActive = ds3231.now().hour() >= 6 && ds3231.now().hour() <= 20;
   unsigned long currentMeasurement = millis();
-  char time[] = "hh:mm:ss";
+  char time[] = "hh:mm";
   char date[] = "YYYY-MM-DD";
+  Serial.println(ds3231.now().hour());
 
   // Check if current time is not between 6AM and 8PM
-  if (!isActive)
+  if (currentHour <= 6 || currentHour >= 20)
   {
+    Serial.println("Working");
     // Put Arduino and components to sleep
     goToSleep();
 
@@ -87,12 +90,16 @@ void loop()
 
     while (!dataReady)
     {
-      delay(100);
-      if (scd41.getDataReadyStatus(dataReady) != 0)
+      if ((currentMeasurement - previousMeasurement) >= DELAY_INTERVAL)
       {
-        // Display error messages
-        displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
+        previousMeasurement = currentMeasurement;
+        if (scd41.getDataReadyStatus(dataReady) != 0)
+        {
+          // Display error messages
+          displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
+        }
       }
+      currentMeasurement = millis();
     }
 
     // Read and set measurement values
@@ -127,7 +134,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.disableAlarm(2);
 
     // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
@@ -148,7 +155,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.clearAlarm(2);
 
     // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
   // Check if in Auto Mode
@@ -330,7 +337,7 @@ void initializeDS3231()
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
 }
 
 // Prepare LCD on startup
@@ -449,6 +456,31 @@ void initializeSwitches()
 // Power down Arduino and reset components
 void goToSleep()
 {
+  // Set alarm to wake up Arduino after 10 hours
+  uint8_t currentHour = ds3231.now().hour();
+  int8_t targetHour = (currentHour >= 20) ? ((23 - currentHour) + 6) : (6 - currentHour);
+  int8_t targetMinute = (59 - ds3231.now().minute());
+  int8_t targetSecond = (60 - ds3231.now().second());
+  DateTime targetTimeObject = ds3231.now() + TimeSpan(0, targetHour, targetMinute, targetSecond);
+  char time[] = "YYYY-MM-DD hh:mm:ss";
+  char targetTime[] = "YYYY-MM-DD hh:mm:ss";
+
+  if (targetMinute > 0)
+  {
+    targetHour--;
+  }
+
+  if (targetSecond > 0)
+  {
+    targetMinute--;
+  }
+  ds3231.now().toString(time);
+  Serial.println(time);
+  Serial.println(targetHour);
+  Serial.println(targetMinute);
+  Serial.println(targetSecond);
+  targetTimeObject.toString(targetTime);
+  Serial.println(targetTime);
   // Reset relay
   digitalWrite(RELAY_PIN, HIGH);
 
@@ -486,8 +518,7 @@ void goToSleep()
   ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
 
-  // Set alarm to wake up Arduino after 10 hours
-  setAlarm(1, ds3231.now() + TimeSpan(0, 10, 0, 0), 'h');
+  setAlarm(1, targetTime, 'h');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
