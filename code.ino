@@ -26,7 +26,6 @@ const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 // Initialize flags
 volatile byte isAuto;
 bool hasDisplay = false;
-bool isActive = false;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
 uint16_t co2Concentration = 0;
@@ -47,6 +46,7 @@ void setup()
   // Initialize all components
   initializeComponents();
 
+  // Display success message
   displayMessages(F("All components"), F("are working!"));
 }
 
@@ -54,11 +54,12 @@ void loop()
 {
   // Initialize necessary variables
   bool dataReady = false;
+  bool isActive = ds3231.now().hour() >= 6 && ds3231.now().hour() <= 20;
   unsigned long currentMeasurement = millis();
   char time[] = "hh:mm:ss";
   char date[] = "YYYY-MM-DD";
 
-  // Check if current time is not between 6AM and 6PM
+  // Check if current time is not between 6AM and 8PM
   if (!isActive)
   {
     // Put Arduino and components to sleep
@@ -66,8 +67,6 @@ void loop()
 
     // Reset all components after waking up
     resetComponents();
-
-    isActive = true;
   }
 
   // Store current time
@@ -77,7 +76,6 @@ void loop()
   // Check if data is ready to be measured
   if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL)
   {
-    Serial.println(F("10 seconds passed, measuring..."));
     previousMeasurement = currentMeasurement;
 
     // Set data ready status
@@ -97,21 +95,12 @@ void loop()
       }
     }
 
-    Serial.println(F("Data is ready, setting values..."));
     // Read and set measurement values
     if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
     {
       // Display error messages
       displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
     }
-    Serial.print(F("Temp: "));
-    Serial.print(temperature);
-    Serial.print(F("RH: "));
-    Serial.print(relativeHumidity);
-    Serial.print(F("CO2: "));
-    Serial.print(co2Concentration);
-    Serial.print(F("Time: "));
-    Serial.println(time);
   }
 
   // Handle measured data
@@ -128,7 +117,7 @@ void loop()
 // Handles events
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10], char date[12])
 {
-  // Check if alarm 1 for 12-hour interval of sleep is ringing
+  // Check if alarm 1 for 10-hour interval of sleep is ringing
   if (ds3231.alarmFired(1))
   {
     // Clear and disable this alarm
@@ -138,7 +127,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.disableAlarm(2);
 
     // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
@@ -154,13 +143,12 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     writeToCard(tempText, humidityText, co2Text, time, date);
-    readFromCard();
 
     // Clear this alarm
     ds3231.clearAlarm(2);
 
     // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
   // Check if in Auto Mode
@@ -342,7 +330,7 @@ void initializeDS3231()
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 }
 
 // Prepare LCD on startup
@@ -498,8 +486,8 @@ void goToSleep()
   ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
 
-  // Set alarm to wake up Arduino after 12 hours
-  setAlarm(1, ds3231.now() + TimeSpan(0, 0, 0, 10), 's');
+  // Set alarm to wake up Arduino after 10 hours
+  setAlarm(1, ds3231.now() + TimeSpan(0, 10, 0, 0), 'h');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -509,33 +497,6 @@ void goToSleep()
 void onAlarm()
 {
   return;
-}
-
-// Read sd card contents
-void readFromCard()
-{
-  // Initialize File object
-  File dataFile;
-
-  // Open file for reading
-  dataFile = SD.open(FILE_NAME, FILE_READ);
-
-  // Check if file does not exist
-  if (!dataFile)
-  {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
-  }
-
-  // Loop while data exists in file
-  while (dataFile.available())
-  {
-    // Read file and print to Serial
-    Serial.write(dataFile.read());
-  }
-
-  // Close file
-  dataFile.close();
 }
 
 // Reset all components after waking up
