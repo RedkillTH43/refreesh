@@ -20,14 +20,17 @@ const byte CHIP_SELECT_PIN = 10;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
-const long DISPLAY_INTERVAL = 5000L;
-const long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
+const unsigned long DISPLAY_INTERVAL = 5000L;
+const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 
 // Initialize flags
-unsigned long previousMillis = 0L;
-unsigned long previousMeasurement = 0L;
-bool hasDisplay = false;
 volatile byte isAuto;
+bool hasDisplay = false;
+unsigned long previousMeasurement = 0L;
+unsigned long previousMillis = 0L;
+uint16_t co2Concentration = 0;
+float temperature = 0.0f;
+float relativeHumidity = 0.0f;
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -43,8 +46,8 @@ void setup()
   // Initialize all components
   initializeComponents();
 
-  // Display success messages if working
   displayMessages(F("All components"), F("are working!"));
+  delay(3000);
 }
 
 void loop()
@@ -52,11 +55,9 @@ void loop()
   // Initialize necessary variables
   bool dataReady = false;
   bool isActive = ds3231.now().hour() >= 6 && ds3231.now().hour() <= 18;
-  uint16_t co2Concentration = 0;
   unsigned long currentMeasurement = millis();
-  float temperature = 0.0f;
-  float relativeHumidity = 0.0f;
-  char time[10] = "hh:mm:ss";
+  char time[] = "hh:mm:ss";
+  char date[] = "YYYY-MM-DD";
 
   // Check if current time is not between 6AM and 6PM
   if (!isActive)
@@ -70,10 +71,12 @@ void loop()
 
   // Store current time
   ds3231.now().toString(time);
+  ds3231.now().toString(date);
 
   // Check if data is ready to be measured
   if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL)
   {
+    Serial.println(F("10 seconds passed, measuring..."));
     previousMeasurement = currentMeasurement;
 
     // Set data ready status
@@ -83,29 +86,35 @@ void loop()
       displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
     }
 
-    // Check if data is not ready to be measured
-    if (!dataReady)
+    while (!dataReady)
     {
-      // Set variables to previous measurement
-      co2Concentration = co2Concentration;
-      temperature = temperature;
-      relativeHumidity = relativeHumidity;
-    }
-
-    // Check if data is ready to be measured
-    else
-    {
-      // Read and set measurement values
-      if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
+      delay(100);
+      if (scd41.getDataReadyStatus(dataReady) != 0)
       {
         // Display error messages
-        displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
+        displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
       }
     }
+
+    Serial.println(F("Data is ready, setting values..."));
+    // Read and set measurement values
+    if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
+    {
+      // Display error messages
+      displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
+    }
+    Serial.print(F("Temp: "));
+    Serial.print(temperature);
+    Serial.print(F("RH: "));
+    Serial.print(relativeHumidity);
+    Serial.print(F("CO2: "));
+    Serial.print(co2Concentration);
+    Serial.print(F("Time: "));
+    Serial.println(time);
   }
 
   // Handle measured data
-  handleEvent(temperature, relativeHumidity, co2Concentration, time);
+  handleEvent(temperature, relativeHumidity, co2Concentration, time, date);
 
   // Display measured data
   displayData(temperature, relativeHumidity, co2Concentration, time);
@@ -116,7 +125,7 @@ void loop()
 /////////////////////////////////////
 
 // Handles events
-void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
+void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10], char date[12])
 {
   // Check if alarm 1 for 12-hour interval of sleep is ringing
   if (ds3231.alarmFired(1))
@@ -126,7 +135,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.disableAlarm(1);
 
     // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
@@ -141,13 +150,14 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     itoa(co2Concentration, co2Text, 10);
 
     // Write to file in sd card
-    writeToCard(tempText, humidityText, co2Text, time);
+    writeToCard(tempText, humidityText, co2Text, time, date);
+    readFromCard();
 
     // Clear this alarm
     ds3231.clearAlarm(2);
 
     // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 
   // Check if in Auto Mode
@@ -285,8 +295,8 @@ void initializeComponents()
   initializeRelay();
   initializeLED();
   initializeSCD41();
-  initializeDS3231();
   initializeSDCard();
+  initializeDS3231();
 }
 
 // Prepare Arduino on startup
@@ -322,12 +332,14 @@ void initializeDS3231()
   // Clear alarms
   ds3231.clearAlarm(1);
   ds3231.clearAlarm(2);
+  ds3231.disableAlarm(1);
+  ds3231.disableAlarm(2);
 
   // Disable SQW pin to allow for alarm interrupt
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
 }
 
 // Prepare LCD on startup
@@ -490,6 +502,33 @@ void onAlarm()
   return;
 }
 
+// Read sd card contents
+void readFromCard()
+{
+  // Initialize File object
+  File dataFile;
+
+  // Open file for reading
+  dataFile = SD.open(FILE_NAME, FILE_READ);
+
+  // Check if file does not exist
+  if (!dataFile)
+  {
+    // Print error message
+    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
+  }
+
+  // Loop while data exists in file
+  while (dataFile.available())
+  {
+    // Read file and print to Serial
+    Serial.write(dataFile.read());
+  }
+
+  // Close file
+  dataFile.close();
+}
+
 // Reset all components after waking up
 void resetComponents()
 {
@@ -614,7 +653,7 @@ void turnFanOn()
 }
 
 // Write data to sd card
-void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char time[10])
+void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char time[10], char date[12])
 {
   // Initialize File object
   File dataFile;
@@ -628,6 +667,10 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
     // Print error message
     displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
   }
+
+  // Write date to file
+  dataFile.print(date);
+  dataFile.print(F(", "));
 
   // Write time to file
   dataFile.print(time);
