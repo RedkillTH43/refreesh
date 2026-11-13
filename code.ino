@@ -132,7 +132,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.disableAlarm(2);
 
     // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
@@ -153,7 +153,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     ds3231.clearAlarm(2);
 
     // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
   // Check if in Auto Mode
@@ -335,7 +335,7 @@ void initializeDS3231()
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 }
 
 // Prepare LCD on startup
