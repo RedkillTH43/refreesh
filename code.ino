@@ -26,6 +26,7 @@ const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 // Initialize flags
 volatile byte isAuto;
 bool hasDisplay = false;
+bool isActive = false;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
 uint16_t co2Concentration = 0;
@@ -47,14 +48,12 @@ void setup()
   initializeComponents();
 
   displayMessages(F("All components"), F("are working!"));
-  delay(3000);
 }
 
 void loop()
 {
   // Initialize necessary variables
   bool dataReady = false;
-  bool isActive = ds3231.now().hour() >= 6 && ds3231.now().hour() <= 18;
   unsigned long currentMeasurement = millis();
   char time[] = "hh:mm:ss";
   char date[] = "YYYY-MM-DD";
@@ -67,6 +66,8 @@ void loop()
 
     // Reset all components after waking up
     resetComponents();
+
+    isActive = true;
   }
 
   // Store current time
@@ -132,7 +133,9 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
   {
     // Clear and disable this alarm
     ds3231.clearAlarm(1);
+    ds3231.clearAlarm(2);
     ds3231.disableAlarm(1);
+    ds3231.disableAlarm(2);
 
     // Set a new alarm for 1-hour interval of writing to SD card
     setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
@@ -462,18 +465,23 @@ void goToSleep()
   digitalWrite(RELAY_PIN, HIGH);
 
   // Stop SCD41 current periodic measurement
-  if (!scd41.stopPeriodicMeasurement())
+  if (scd41.stopPeriodicMeasurement() != 0)
   {
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: stopPeriodicMeasurement failed."));
   }
 
   // Start SCD41 new low power periodic measurement
-  if (!scd41.startLowPowerPeriodicMeasurement())
+  if (scd41.startLowPowerPeriodicMeasurement() != 0)
   {
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startLowPowerPeriodicMeasurement failed."));
   }
+
+  // Display message
+  lcd.clear();
+  lcd.print(F("Going to sleep.."));
+  delay(3000);
 
   // Reset LCD1602
   lcd.noBacklight();
@@ -487,10 +495,11 @@ void goToSleep()
   // Reset alarms
   ds3231.clearAlarm(1);
   ds3231.clearAlarm(2);
+  ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
 
   // Set alarm to wake up Arduino after 12 hours
-  setAlarm(1, ds3231.now() + TimeSpan(0, 12, 0, 10), 'h');
+  setAlarm(1, ds3231.now() + TimeSpan(0, 0, 0, 10), 's');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -548,14 +557,14 @@ void resetComponents()
   digitalWrite(GREEN_LED_PIN, HIGH);
 
   // Stop SCD41 current periodic measurement
-  if (!scd41.stopPeriodicMeasurement())
+  if (scd41.stopPeriodicMeasurement() != 0)
   {
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: stopPeriodicMeasurement failed."));
   }
 
   // Start SCD41 new periodic measurement
-  if (!scd41.startPeriodicMeasurement())
+  if (scd41.startPeriodicMeasurement() != 0)
   {
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startPeriodicMeasurement failed."));
