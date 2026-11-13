@@ -59,12 +59,10 @@ void loop()
   unsigned long currentMeasurement = millis();
   char time[] = "hh:mm";
   char date[] = "YYYY-MM-DD";
-  Serial.println(ds3231.now().hour());
 
   // Check if current time is not between 6AM and 8PM
   if (currentHour <= 6 || currentHour >= 20)
   {
-    Serial.println("Working");
     // Put Arduino and components to sleep
     goToSleep();
 
@@ -457,13 +455,10 @@ void initializeSwitches()
 void goToSleep()
 {
   // Set alarm to wake up Arduino after 10 hours
-  uint8_t currentHour = ds3231.now().hour();
-  int8_t targetHour = (currentHour >= 20) ? ((23 - currentHour) + 6) : (6 - currentHour);
-  int8_t targetMinute = (59 - ds3231.now().minute());
-  int8_t targetSecond = (60 - ds3231.now().second());
-  DateTime targetTimeObject = ds3231.now() + TimeSpan(0, targetHour, targetMinute, targetSecond);
-  char time[] = "YYYY-MM-DD hh:mm:ss";
-  char targetTime[] = "YYYY-MM-DD hh:mm:ss";
+  DateTime currentDateTime = ds3231.now();
+  int8_t targetHour = (currentDateTime.hour() >= 20) ? ((23 - currentDateTime.hour()) + 6) : (6 - currentDateTime.hour());
+  int8_t targetMinute = (59 - currentDateTime.minute());
+  int8_t targetSecond = (60 - currentDateTime.second());
 
   if (targetMinute > 0)
   {
@@ -474,13 +469,7 @@ void goToSleep()
   {
     targetMinute--;
   }
-  ds3231.now().toString(time);
-  Serial.println(time);
-  Serial.println(targetHour);
-  Serial.println(targetMinute);
-  Serial.println(targetSecond);
-  targetTimeObject.toString(targetTime);
-  Serial.println(targetTime);
+
   // Reset relay
   digitalWrite(RELAY_PIN, HIGH);
 
@@ -518,7 +507,7 @@ void goToSleep()
   ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
 
-  setAlarm(1, targetTime, 'h');
+  setAlarm(1, ds3231.now() + TimeSpan(0, targetHour, targetMinute, targetSecond), 'h');
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
