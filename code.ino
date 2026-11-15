@@ -25,8 +25,8 @@ enum Pins : byte
 enum Tests : bool
 {
   SCD41_SELF_TEST = false,
-  ONE_MIN_WRITE = true,
-  DELETE_FILE = true,
+  ONE_MIN_WRITE = false,
+  DELETE_FILE = false,
   READ_SD_CARD = true,
   ADJUST_TIME = false,
   LIGHT_LED = true
