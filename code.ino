@@ -9,14 +9,20 @@
 #include <Wire.h>
 
 // Define component pins
-const byte CLOCK_INTERRUPT_PIN = 2;
-const byte SLIDE_SWITCH_PIN = 3;
-const byte ROCKER_SWITCH_PIN = 4;
-const byte GREEN_LED_PIN = 5;
-const byte YELLOW_LED_PIN = 6;
-const byte RED_LED_PIN = 7;
-const byte RELAY_PIN = 9;
-const byte CHIP_SELECT_PIN = 10;
+
+enum Pins : byte
+{
+  CLOCK_INTERRUPT_PIN = 2,
+  SLIDE_SWITCH_PIN = 3,
+  ROCKER_SWITCH_PIN = 4,
+  GREEN_LED_PIN = 5,
+  YELLOW_LED_PIN = 6,
+  RED_LED_PIN = 7,
+  RELAY_PIN = 9,
+  CHIP_SELECT_PIN = 10
+};
+
+bool initialMeasurement = true;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
@@ -25,7 +31,6 @@ const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 const unsigned long DELAY_INTERVAL = 100L;
 
 // Initialize flags
-volatile byte isAuto;
 bool hasDisplay = false;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
@@ -75,15 +80,17 @@ void loop()
   ds3231.now().toString(date);
 
   // Check if data is ready to be measured
-  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL)
+  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL || initialMeasurement)
   {
+    Serial.println(F("10 seconds had passed, measuring environment..."));
     previousMeasurement = currentMeasurement;
+    initialMeasurement = false;
 
     // Set data ready status
     if (scd41.getDataReadyStatus(dataReady) != 0)
     {
       // Display error messages
-      displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
+      displayError(F("SCD41 failed"), F("Error: getDataReadyStatus() failed."));
     }
 
     while (!dataReady)
@@ -147,6 +154,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     itoa(co2Concentration, co2Text, 10);
 
     // Write to file in sd card
+    Serial.println(F("Writing data to SD card..."));
     writeToCard(tempText, humidityText, co2Text, time, date);
 
     // Clear this alarm
@@ -156,22 +164,28 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
   }
 
+  byte isAuto = digitalRead(SLIDE_SWITCH_PIN);
+
+  // Turn yellow LED on or off for Auto indication
+  digitalWrite(YELLOW_LED_PIN, !isAuto);
+
   // Check if in Auto Mode
   if (isAuto == LOW)
   {
-    // Turn on yellow LED for Auto indication
-    digitalWrite(YELLOW_LED_PIN, HIGH);
-
     // Check if temperature, humidity, and co2 are above normal level
     if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
     {
-      turnFanOn();
+      digitalWrite(RELAY_PIN, LOW);
+      digitalWrite(RED_LED_PIN, LOW);
+      digitalWrite(GREEN_LED_PIN, HIGH);
     }
 
     // Check if temperature, humidity, and co2 are within normal level
     else
     {
-      turnFanOff();
+      digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(RED_LED_PIN, HIGH);
+      digitalWrite(GREEN_LED_PIN, LOW);
     }
   }
 
@@ -181,20 +195,10 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     // Store the current state of rocker switch
     byte isOn = digitalRead(ROCKER_SWITCH_PIN);
 
-    // Turn off yellow LED for Manual indication
-    digitalWrite(YELLOW_LED_PIN, LOW);
-
-    // Check if rocker switch is on and turn relay on
-    if (isOn == LOW)
-    {
-      turnFanOn();
-    }
-
-    // Check if rocker switch is off and turn relay off
-    else
-    {
-      turnFanOff();
-    }
+    // Turn relay, red led, and green led on or off
+    digitalWrite(RELAY_PIN, isOn);
+    digitalWrite(RED_LED_PIN, isOn);
+    digitalWrite(GREEN_LED_PIN, !isOn);
   }
 }
 
@@ -354,11 +358,6 @@ void initializeLED()
   pinMode(RED_LED_PIN, OUTPUT);
   pinMode(YELLOW_LED_PIN, OUTPUT);
   pinMode(GREEN_LED_PIN, OUTPUT);
-
-  // Set all LEDs ON initially
-  digitalWrite(RED_LED_PIN, HIGH);
-  digitalWrite(YELLOW_LED_PIN, HIGH);
-  digitalWrite(GREEN_LED_PIN, HIGH);
 }
 
 // Prepare relay on startup
@@ -402,20 +401,6 @@ void initializeSCD41()
     displayError(F("SCD41 failed"), F("Error: reinit() failed."));
   }
 
-  // Test the component's functionality
-  if (scd41.performSelfTest(testResult) != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: performSelfTest() failed."));
-  }
-
-  // Check result of self-test
-  if (testResult != 0)
-  {
-    // Display error messages
-    displayError(F("SCD 41 failed"), F("Error: self-test failed."));
-  }
-
   // Start measuring the environment
   if (scd41.startPeriodicMeasurement() != 0)
   {
@@ -427,12 +412,15 @@ void initializeSCD41()
 // Prepare SD Card on startup
 void initializeSDCard()
 {
+  bool status;
+
   // Check if there is no connection with sd card
-  if (!SD.begin(CHIP_SELECT_PIN))
+  do
   {
-    // Display error messages
-    displayError(F("SD card failed"), F("Error: SD card failed to initialize."));
-  }
+    status = SD.begin(CHIP_SELECT_PIN);
+    lcd.clear();
+    lcd.print(F("Insert SD card.."));
+  } while (!status);
 }
 
 // Prepare switches on startup
@@ -441,10 +429,6 @@ void initializeSwitches()
   // Configure pins for switches
   pinMode(SLIDE_SWITCH_PIN, INPUT_PULLUP);
   pinMode(ROCKER_SWITCH_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(SLIDE_SWITCH_PIN), toggleAuto, CHANGE);
-
-  // Set initial mode (Manual/Auto)
-  isAuto = digitalRead(SLIDE_SWITCH_PIN);
 }
 
 /////////////////////////////////////
@@ -519,12 +503,40 @@ void onAlarm()
   return;
 }
 
+// Read sd card contents
+void readFromCard()
+{
+  // Initialize File object
+  File dataFile;
+
+  // Open file for reading
+  dataFile = SD.open(FILE_NAME, FILE_READ);
+
+  // Check if file does not exist
+  if (!dataFile)
+  {
+    // Print error message
+    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
+  }
+
+  // Loop while data exists in file
+  while (dataFile.available())
+  {
+    // Read file and print to Serial
+    Serial.write(dataFile.read());
+  }
+
+  // Close file
+  dataFile.close();
+}
+
 // Reset all components after waking up
 void resetComponents()
 {
   // Reset necessary variables
   previousMeasurement = 0;
   previousMillis = 0;
+  hasDisplay = false;
 
   // Initialize LCD1602
   lcd.backlight();
@@ -620,42 +632,32 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
   }
 }
 
-// Toggle Auto to Manual and vice versa
-void toggleAuto()
-{
-  isAuto = !isAuto;
-}
-
-// Turn relay OFF, red ON, and green OFF
-void turnFanOff()
-{
-  digitalWrite(RELAY_PIN, HIGH);
-  digitalWrite(RED_LED_PIN, HIGH);
-  digitalWrite(GREEN_LED_PIN, LOW);
-}
-
-// Turn relay ON, red OFF, and green ON
-void turnFanOn()
-{
-  digitalWrite(RELAY_PIN, LOW);
-  digitalWrite(RED_LED_PIN, LOW);
-  digitalWrite(GREEN_LED_PIN, HIGH);
-}
-
 // Write data to sd card
 void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char time[10], char date[12])
 {
   // Initialize File object
   File dataFile;
+  bool status;
+  bool displayed = false;
 
-  // Open file for writing
   dataFile = SD.open(FILE_NAME, FILE_WRITE);
 
   // Check if file does not exist
-  if (!dataFile)
+  while (!dataFile)
   {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
+    // Check if there is no connection with sd card
+    do
+    {
+      status = SD.begin(CHIP_SELECT_PIN);
+      if (!displayed)
+      {
+        lcd.clear();
+        lcd.print(F("Insert SD card.."));
+      }
+      displayed = true;
+    } while (!status);
+
+    dataFile = SD.open(FILE_NAME, FILE_WRITE);
   }
 
   // Write date to file
