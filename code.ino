@@ -503,33 +503,6 @@ void onAlarm()
   return;
 }
 
-// Read sd card contents
-void readFromCard()
-{
-  // Initialize File object
-  File dataFile;
-
-  // Open file for reading
-  dataFile = SD.open(FILE_NAME, FILE_READ);
-
-  // Check if file does not exist
-  if (!dataFile)
-  {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
-  }
-
-  // Loop while data exists in file
-  while (dataFile.available())
-  {
-    // Read file and print to Serial
-    Serial.write(dataFile.read());
-  }
-
-  // Close file
-  dataFile.close();
-}
-
 // Reset all components after waking up
 void resetComponents()
 {
