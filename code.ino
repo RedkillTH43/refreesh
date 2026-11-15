@@ -32,8 +32,8 @@ enum Tests : bool
   LIGHT_LED = true
 };
 
-bool THIRTY_SEC_SLEEP = false;
-bool initialMeasurement = true;
+bool ONE_MIN_SLEEP = false;
+bool isInactive;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
@@ -43,6 +43,9 @@ const unsigned long DELAY_INTERVAL = 100L;
 
 // Initialize flags
 bool hasDisplay = false;
+bool initialMeasurement = true;
+bool alarm1Set = false;
+bool alarm2Set = false;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
 uint16_t co2Concentration = 0;
@@ -75,9 +78,10 @@ void loop()
   unsigned long currentMeasurement = millis();
   char time[] = "hh:mm";
   char date[] = "YYYY-MM-DD";
+  isInactive = (currentHour <= 6 || currentHour >= 20);
 
   // Check if current time is not between 6AM and 8PM
-  if (currentHour <= 6 || currentHour >= 20 || THIRTY_SEC_SLEEP)
+  if (isInactive || ONE_MIN_SLEEP)
   {
     Serial.println(F("Device is going to sleep..."));
     // Put Arduino and components to sleep
@@ -86,7 +90,8 @@ void loop()
     // Reset all components after waking up
     Serial.println(F("Device is waking up..."));
     resetComponents();
-    THIRTY_SEC_SLEEP = false;
+    ONE_MIN_SLEEP = false;
+    isInactive = false;
   }
 
   // Store current time
@@ -146,25 +151,26 @@ void loop()
 void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10], char date[12])
 {
   // Check if alarm 1 for 10-hour interval of sleep is ringing
-  if (ds3231.alarmFired(1))
+  if (ds3231.alarmFired(1) && alarm1Set)
   {
     // Clear and disable this alarm
     ds3231.clearAlarm(1);
-    ds3231.clearAlarm(2);
     ds3231.disableAlarm(1);
-    ds3231.disableAlarm(2);
-
-    // Set a new alarm for 1-hour interval of writing to SD card
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
+    alarm1Set = false;
 
     if (ONE_MIN_WRITE)
     {
       setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+      alarm2Set = true;
+    }
+    else
+    {
+      setSDCardWriteAlarm();
     }
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
-  if (ds3231.alarmFired(2))
+  if (ds3231.alarmFired(2) && alarm2Set)
   {
     // Declare necessary variables
     char tempText[7], humidityText[7], co2Text[7];
@@ -185,14 +191,20 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     }
 
     // Clear this alarm
+    ds3231.disableAlarm(2);
     ds3231.clearAlarm(2);
+    alarm2Set = false;
 
     // Set another alarm for 1-hour interval
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 
     if (ONE_MIN_WRITE)
     {
       setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+      alarm2Set = true;
+    }
+    else
+    {
+      setSDCardWriteAlarm();
     }
   }
 
@@ -371,16 +383,17 @@ void initializeDS3231()
   attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), onAlarm, FALLING);
 
   // Clear alarms
-  ds3231.clearAlarm(1);
-  ds3231.clearAlarm(2);
   ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
+  ds3231.clearAlarm(1);
+  ds3231.clearAlarm(2);
+  alarm1Set = false;
+  alarm2Set = false;
 
   // Disable SQW pin to allow for alarm interrupt
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 
   if (DELETE_FILE)
   {
@@ -390,6 +403,11 @@ void initializeDS3231()
   if (ONE_MIN_WRITE)
   {
     setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    alarm2Set = true;
+  }
+  else
+  {
+    setSDCardWriteAlarm();
   }
 }
 
@@ -515,38 +533,8 @@ void initializeSwitches()
 void goToSleep()
 {
   // Set alarm to wake up Arduino after 10 hours
-  uint8_t currentHour = ds3231.now().hour();
-  int8_t targetHour = (currentHour >= 20) ? ((23 - currentHour) + 6) : (6 - currentHour);
-  int8_t targetMinute = (59 - ds3231.now().minute());
-  int8_t targetSecond = (60 - ds3231.now().second());
-  DateTime targetTimeObject = ds3231.now() + TimeSpan(0, targetHour, targetMinute, targetSecond);
   char time[] = "YYYY-MM-DD hh:mm:ss";
   char targetTime[] = "YYYY-MM-DD hh:mm:ss";
-
-  if (targetMinute > 0)
-  {
-    targetHour--;
-  }
-
-  if (targetSecond > 0)
-  {
-    targetMinute--;
-  }
-
-  ds3231.now().toString(time);
-  Serial.print(F("Current Time: "));
-  Serial.println(time);
-
-  Serial.print(F("Added Time: +"));
-  Serial.print(targetHour);
-  Serial.print(F(":"));
-  Serial.print(targetMinute);
-  Serial.print(F(":"));
-  Serial.println(targetSecond);
-
-  targetTimeObject.toString(targetTime);
-  Serial.print(F("Wakeup Time: "));
-  Serial.println(targetTime);
 
   // Reset relay
   digitalWrite(RELAY_PIN, HIGH);
@@ -565,15 +553,6 @@ void goToSleep()
     displayError(F("SCD41 failed"), F("Error: startLowPowerPeriodicMeasurement failed."));
   }
 
-  // Display message
-  lcd.clear();
-  lcd.print(F("Going to sleep.."));
-  delay(3000);
-
-  // Reset LCD1602
-  lcd.noBacklight();
-  lcd.noDisplay();
-
   // Reset LEDs
   digitalWrite(RED_LED_PIN, LOW);
   digitalWrite(YELLOW_LED_PIN, LOW);
@@ -584,13 +563,35 @@ void goToSleep()
   ds3231.clearAlarm(2);
   ds3231.disableAlarm(1);
   ds3231.disableAlarm(2);
+  alarm1Set = false;
+  alarm2Set = false;
 
-  setAlarm(1, targetTime, 'h');
-
-  if (THIRTY_SEC_SLEEP)
+  if (ONE_MIN_SLEEP)
   {
-    setAlarm(1, ds3231.now() + TimeSpan(0, 0, 0, 30), 's');
+    setAlarm(1, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
+  else
+  {
+    setAlarm(1, ds3231.now() + TimeSpan(1, 6 - ds3231.now().hour(), -ds3231.now().minute(), -ds3231.now().second()), 'h');
+  }
+  alarm1Set = true;
+
+  ds3231.now().toString(time);
+  Serial.print(F("Current Time: "));
+  Serial.println(time);
+
+  ds3231.getAlarm1().toString(targetTime);
+  Serial.print(F("Wakeup Time: "));
+  Serial.println(targetTime);
+
+  // Display message
+  lcd.clear();
+  lcd.print(F("Going to sleep.."));
+  delay(3000);
+
+  // Reset LCD1602
+  lcd.noBacklight();
+  lcd.noDisplay();
 
   // Power down Arduino
   LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
@@ -675,21 +676,31 @@ void resetComponents()
   }
 }
 
+void setSDCardWriteAlarm()
+{
+  DateTime currentTimeObject = ds3231.now();
+  char currentTime[] = "YYYY-MM-DD hh:mm:ss";
+  char targetTime[] = "YYYY-MM-DD hh:mm:ss";
+
+  // Set a new alarm for 1-hour interval of writing to SD card
+  setAlarm(2, ds3231.now() + TimeSpan(0, 1, -currentTimeObject.minute(), -currentTimeObject.second()), 'm');
+  alarm2Set = true;
+
+  Serial.print(F("Current Time: "));
+  currentTimeObject.toString(currentTime);
+  Serial.println(currentTime);
+
+  Serial.print(F("Target Time: "));
+  ds3231.getAlarm2().toString(targetTime);
+  Serial.println(targetTime);
+}
+
 // Set alarm based on specified details
 void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
 {
   // Check if alarm mode is seconds or hours
   switch (alarmMode)
   {
-  // Set alarm in seconds
-  case 's':
-    // Set alarm 1
-    if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Second))
-    {
-      // Display error messages
-      displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
-    }
-    break;
 
   // Set alarm in minutes
   case 'm':
@@ -712,6 +723,7 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
         displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
       }
     }
+    break;
 
   // Set alarm in hours
   case 'h':
