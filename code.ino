@@ -59,7 +59,6 @@ void loop()
   unsigned long currentMeasurement = millis();
   char time[] = "hh:mm";
   char date[] = "YYYY-MM-DD";
-  Serial.println(ds3231.now().hour());
 
   // Check if current time is not between 6AM and 8PM
   if (currentHour <= 6 || currentHour >= 20)
@@ -150,6 +149,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     writeToCard(tempText, humidityText, co2Text, time, date);
+    readFromCard();
 
     // Clear this alarm
     ds3231.clearAlarm(2);
@@ -528,6 +528,33 @@ void goToSleep()
 void onAlarm()
 {
   return;
+}
+
+// Read sd card contents
+void readFromCard()
+{
+  // Initialize File object
+  File dataFile;
+
+  // Open file for reading
+  dataFile = SD.open(FILE_NAME, FILE_READ);
+
+  // Check if file does not exist
+  if (!dataFile)
+  {
+    // Print error message
+    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
+  }
+
+  // Loop while data exists in file
+  while (dataFile.available())
+  {
+    // Read file and print to Serial
+    Serial.write(dataFile.read());
+  }
+
+  // Close file
+  dataFile.close();
 }
 
 // Reset all components after waking up
