@@ -33,6 +33,7 @@ enum Tests : bool
 };
 
 bool THIRTY_SEC_SLEEP = false;
+bool initialMeasurement = true;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
@@ -41,7 +42,6 @@ const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 const unsigned long DELAY_INTERVAL = 100L;
 
 // Initialize flags
-volatile byte isAuto;
 bool hasDisplay = false;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
@@ -94,10 +94,11 @@ void loop()
   ds3231.now().toString(date);
 
   // Check if data is ready to be measured
-  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL)
+  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL || initialMeasurement)
   {
     Serial.println(F("10 seconds had passed, measuring environment..."));
     previousMeasurement = currentMeasurement;
+    initialMeasurement = false;
 
     // Set data ready status
     if (scd41.getDataReadyStatus(dataReady) != 0)
@@ -194,6 +195,8 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
       setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
     }
   }
+
+  byte isAuto = digitalRead(SLIDE_SWITCH_PIN);
 
   // Turn yellow LED on or off for Auto indication
   digitalWrite(YELLOW_LED_PIN, !isAuto);
@@ -379,14 +382,14 @@ void initializeDS3231()
   // Set alarm 2 for 1-hour interval of writing to SD card
   setAlarm(2, ds3231.now() + TimeSpan(0, 1, 0, 0), 'h');
 
-  if (ONE_MIN_WRITE)
-  {
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-  }
-
   if (DELETE_FILE)
   {
     SD.remove(FILE_NAME);
+  }
+
+  if (ONE_MIN_WRITE)
+  {
+    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
   }
 }
 
@@ -502,10 +505,6 @@ void initializeSwitches()
   // Configure pins for switches
   pinMode(SLIDE_SWITCH_PIN, INPUT_PULLUP);
   pinMode(ROCKER_SWITCH_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(SLIDE_SWITCH_PIN), toggleAuto, CHANGE);
-
-  // Set initial mode (Manual/Auto)
-  isAuto = digitalRead(SLIDE_SWITCH_PIN);
 }
 
 /////////////////////////////////////
@@ -636,6 +635,7 @@ void resetComponents()
   // Reset necessary variables
   previousMeasurement = 0;
   previousMillis = 0;
+  hasDisplay = false;
 
   // Initialize LCD1602
   lcd.backlight();
@@ -729,12 +729,6 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
     displayError(F("DS3231 failed"), F("Error: invalid alarm mode set."));
     break;
   }
-}
-
-// Toggle Auto to Manual and vice versa
-void toggleAuto()
-{
-  isAuto = !isAuto;
 }
 
 // Write data to sd card
