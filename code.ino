@@ -607,15 +607,27 @@ void readFromCard()
 {
   // Initialize File object
   File dataFile;
+  bool status;
+  bool displayed = false;
 
-  // Open file for reading
   dataFile = SD.open(FILE_NAME, FILE_READ);
 
   // Check if file does not exist
-  if (!dataFile)
+  while (!dataFile)
   {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to read."));
+    // Check if there is no connection with sd card
+    do
+    {
+      status = SD.begin(CHIP_SELECT_PIN);
+      if (!displayed)
+      {
+        lcd.clear();
+        lcd.print(F("Insert SD card.."));
+      }
+      displayed = true;
+    } while (!status);
+
+    dataFile = SD.open(FILE_NAME, FILE_READ);
   }
 
   // Loop while data exists in file
