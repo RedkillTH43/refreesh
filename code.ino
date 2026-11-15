@@ -485,12 +485,15 @@ void initializeSCD41()
 // Prepare SD Card on startup
 void initializeSDCard()
 {
+  bool status;
+
   // Check if there is no connection with sd card
-  if (!SD.begin(CHIP_SELECT_PIN))
+  do
   {
-    // Display error messages
-    displayError(F("SD card failed"), F("Error: SD card failed to initialize."));
-  }
+    status = SD.begin(CHIP_SELECT_PIN);
+    lcd.clear();
+    lcd.print(F("Insert SD card.."));
+  } while (!status);
 }
 
 // Prepare switches on startup
@@ -739,15 +742,27 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
 {
   // Initialize File object
   File dataFile;
+  bool status;
+  bool displayed = false;
 
-  // Open file for writing
   dataFile = SD.open(FILE_NAME, FILE_WRITE);
 
   // Check if file does not exist
-  if (!dataFile)
+  while (!dataFile)
   {
-    // Print error message
-    displayError(F("SD card failed"), F("Error: data.csv failed to open while trying to write."));
+    // Check if there is no connection with sd card
+    do
+    {
+      status = SD.begin(CHIP_SELECT_PIN);
+      if (!displayed)
+      {
+        lcd.clear();
+        lcd.print(F("Insert SD card.."));
+      }
+      displayed = true;
+    } while (!status);
+
+    dataFile = SD.open(FILE_NAME, FILE_WRITE);
   }
 
   // Write date to file
