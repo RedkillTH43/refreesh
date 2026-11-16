@@ -96,7 +96,7 @@ void loop()
   // Initialize necessary variables
   uint8_t currentHour = ds3231.now().hour();
 
-  isInactive = (SLEEP_TEST && isInactive) ? true : (currentHour < 6 || currentHour > 20);
+  isInactive = (SLEEP_TEST && isInactive) ? true : (currentHour < 6 || currentHour >= 20);
 
   // Check if current time is not between 6AM and 8PM
   if (isInactive)
@@ -127,7 +127,7 @@ void loop()
       handleEvent();
 
       uint8_t currentHour = ds3231.now().hour();
-      isInactive = (currentHour < 6 || currentHour > 20 || SLEEP_TEST);
+      isInactive = (currentHour < 6 || currentHour >= 20 || SLEEP_TEST);
 
       if (SLEEP_TEST)
       {
