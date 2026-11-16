@@ -477,20 +477,6 @@ void initializeSCD41()
     displayError(F("SCD41 failed"), F("Error: reinit() failed."));
   }
 
-  // Test the component's functionality
-  if (scd41.performSelfTest(testResult) != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: performSelfTest() failed."));
-  }
-
-  // Check result of self-test
-  if (testResult != 0)
-  {
-    // Display error messages
-    displayError(F("SCD41 failed"), F("Error: self-test failed."));
-  }
-
   // Start measuring the environment
   if (scd41.startPeriodicMeasurement() != 0)
   {
