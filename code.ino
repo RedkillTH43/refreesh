@@ -24,21 +24,22 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_TEST = true,
+  SCD41_TEST = false,
   LED_TEST = true,
   SLEEP_TEST = false,
   READ_TEST = true,
-  WRITE_TEST = false,
-  DELETE_FILE_TEST = false,
+  WRITE_TEST = true,
+  DELETE_FILE_TEST = true,
   ADJUST_TIME_TEST = false,
   PRINT_TIME_TEST = true,
+  ON_OFF_TIME_TEST = true
 };
 
 TimeSpan sleepingTimeInterval = TimeSpan(0, 0, 1, 0);
 Ds3231Alarm1Mode sleepAlarmMode = DS3231_A1_Minute;
 
-TimeSpan writingTimeInterval = TimeSpan(0, 0, 1, 0);
-Ds3231Alarm1Mode writeAlarmMode = DS3231_A1_Minute;
+TimeSpan writingTimeInterval = TimeSpan(0, 0, 0, 10);
+Ds3231Alarm1Mode writeAlarmMode = DS3231_A1_Second;
 
 int testCount = 0;
 int measureTestCount = 3;
@@ -47,7 +48,7 @@ int measureTestCount = 3;
 const char SENSING_FILE_NAME[] = "sdata.csv";
 const char OPERATION_FILE_NAME[] = "odata.csv";
 const int SENSING_ARRAY_LENGTH = 5;
-const int OPERATION_ARRAY_LENGTH = 7;
+const int OPERATION_ARRAY_LENGTH = 4;
 const int timeOffset = 15;
 const unsigned long DISPLAY_INTERVAL = 5000L;
 const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
@@ -58,12 +59,19 @@ bool isInactive = true;
 bool hasDisplay = false;
 bool alarm1Set = false;
 bool initialMeasurement = true;
+bool initialOnTracking = true;
+bool initialOffTracking = true;
+
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
 unsigned long previousTest = 0L;
+unsigned long previousOnTime = 0L;
+unsigned long previousOffTime = 0L;
 uint16_t co2Concentration = 0;
 float temperature = 0.0f;
 float relativeHumidity = 0.0f;
+float timeOn = 0.0f;
+float timeOff = 0.0f;
 
 // Declare component objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -147,6 +155,14 @@ void handleEvent()
   // Check if alarm 1 for 1-hour interval writing to SD card is ringing
   if (ds3231.alarmFired(1) && alarm1Set)
   {
+    if (ON_OFF_TIME_TEST)
+    {
+      Serial.print(F("Time ON: "));
+      Serial.println(timeOn);
+      Serial.print(F("Time OFF: "));
+      Serial.println(timeOff);
+    }
+
     // Declare necessary variables
     char tempText[7], humidityText[7], co2Text[7];
     char currentDate[] = "YYYY-MM-DD";
@@ -208,9 +224,27 @@ void handleEvent()
     // Check if in Auto Mode
     if (isAuto == LOW)
     {
+      unsigned long currentTime = millis();
+
       // Check if temperature, humidity, and co2 are above normal level
       if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
       {
+        initialOffTracking = true;
+
+        if (initialOnTracking)
+        {
+          previousOnTime = millis();
+          initialOnTracking = false;
+        }
+
+        unsigned long elapsedTime = currentTime - previousOnTime;
+
+        if (elapsedTime >= 1000 && elapsedTime < 2000)
+        {
+          timeOn += elapsedTime / 1000;
+          previousOnTime = currentTime;
+        }
+
         digitalWrite(RELAY_PIN, LOW);
         digitalWrite(RED_LED_PIN, LOW);
         digitalWrite(GREEN_LED_PIN, HIGH);
@@ -219,6 +253,22 @@ void handleEvent()
       // Check if temperature, humidity, and co2 are within normal level
       else
       {
+        initialOnTracking = true;
+
+        if (initialOffTracking)
+        {
+          previousOffTime = millis();
+          initialOffTracking = false;
+        }
+
+        unsigned long elapsedTime = currentTime - previousOffTime;
+
+        if (elapsedTime >= 1000)
+        {
+          timeOff += elapsedTime / 1000;
+          previousOffTime = currentTime;
+        }
+
         digitalWrite(RELAY_PIN, HIGH);
         digitalWrite(RED_LED_PIN, HIGH);
         digitalWrite(GREEN_LED_PIN, LOW);
@@ -229,7 +279,45 @@ void handleEvent()
     else
     {
       // Store the current state of rocker switch
+      unsigned long currentTime = millis();
+
       byte isOn = digitalRead(ROCKER_SWITCH_PIN);
+
+      if (isOn == LOW)
+      {
+        initialOffTracking = true;
+        if (initialOnTracking)
+        {
+          previousOnTime = millis();
+          initialOnTracking = false;
+        }
+
+        unsigned long elapsedTime = currentTime - previousOnTime;
+
+        if (elapsedTime >= 1000)
+        {
+          timeOn += elapsedTime / 1000;
+          previousOnTime = currentTime;
+        }
+      }
+
+      if (isOn == HIGH)
+      {
+        initialOnTracking = true;
+        unsigned long elapsedTime = currentTime - previousOffTime;
+
+        if (initialOffTracking)
+        {
+          previousOffTime = millis();
+          initialOffTracking = false;
+        }
+
+        if (elapsedTime >= 1000 && elapsedTime < 2000)
+        {
+          timeOff += elapsedTime / 1000;
+          previousOffTime = currentTime;
+        }
+      }
 
       // Turn relay, red led, and green led on or off
       digitalWrite(RELAY_PIN, isOn);
@@ -414,6 +502,7 @@ void initializeDS3231()
   {
     setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), DS3231_A1_Minute);
   }
+  alarm1Set = true;
 
   char currentTime[] = "YYYY-MM-DD hh:mm:ss";
   char targetTime[] = "YYYY-MM-DD hh:mm:ss";
@@ -706,6 +795,8 @@ void resetComponents()
   // Reset necessary variables
   previousMeasurement = 0;
   previousMillis = 0;
+  timeOn = 0.0f;
+  timeOff = 0.0f;
   hasDisplay = false;
   isInactive = false;
 
