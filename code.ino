@@ -415,6 +415,9 @@ void displayError(String lcdMessage, String serialMessage)
   // Print error message to Serial
   Serial.println(serialMessage);
 
+  // Turn off relay
+  digitalWrite(RELAY_PIN, HIGH);
+
   // Infinite loop to stop the program
   while (1)
     ;
@@ -625,13 +628,18 @@ void initializeSCD41()
 void initializeSDCard()
 {
   bool status;
+  bool displayed = false;
 
   // Check if there is no connection with sd card
   do
   {
     status = SD.begin(CHIP_SELECT_PIN);
-    lcd.clear();
-    lcd.print(F("Insert SD card.."));
+    if (!displayed)
+    {
+      lcd.clear();
+      lcd.print(F("Insert SD card.."));
+    }
+    displayed = true;
   } while (!status);
 }
 
@@ -782,6 +790,7 @@ void readFromCard(const char FILE_NAME[])
       status = SD.begin(CHIP_SELECT_PIN);
       if (!displayed)
       {
+        digitalWrite(RELAY_PIN, HIGH);
         lcd.clear();
         lcd.print(F("Insert SD card.."));
       }
@@ -872,6 +881,7 @@ void writeToCard(const char FILE_NAME[], char *content[])
       status = SD.begin(CHIP_SELECT_PIN);
       if (!displayed)
       {
+        digitalWrite(RELAY_PIN, HIGH);
         lcd.clear();
         lcd.print(F("Insert SD card.."));
       }
