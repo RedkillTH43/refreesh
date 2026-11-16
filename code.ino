@@ -24,15 +24,18 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_SELF_TEST = false,
-  ONE_MIN_WRITE = true,
-  DELETE_FILE = true,
+  SCD41_SELF_TEST = true,
+  ONE_MIN_WRITE = false,
+  DELETE_FILE = false,
   READ_SD_CARD = true,
   ADJUST_TIME = false,
   LIGHT_LED = true,
   ONE_MIN_SLEEP = false,
-  PRINT_TIME = false
+  PRINT_TIME = true
 };
+
+int testCount = 0;
+int measureTestCount = 3;
 
 // Define global macros
 const char SENSING_FILE_NAME[] = "sdata.csv";
@@ -48,7 +51,6 @@ const unsigned long DELAY_INTERVAL = 100L;
 bool isInactive = true;
 bool hasDisplay = false;
 bool alarm1Set = false;
-bool alarm2Set = false;
 bool initialMeasurement = true;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
@@ -78,61 +80,49 @@ void setup()
 void loop()
 {
   // Initialize necessary variables
-  bool dataReady = false;
   uint8_t currentHour = ds3231.now().hour();
-  unsigned long currentMeasurement = millis();
 
-  isInactive = (ONE_MIN_SLEEP && isInactive) ? true : (currentHour <= 6 || currentHour >= 20);
+  isInactive = (ONE_MIN_SLEEP && isInactive) ? true : (currentHour < 6 || currentHour > 20);
 
   // Check if current time is not between 6AM and 8PM
   if (isInactive)
   {
-    Serial.println(F("Device is going to sleep..."));
-    // Put Arduino and components to sleep
-    goToSleep();
+    while (isInactive)
+    {
+      Serial.println(F("Device is going to sleep..."));
+
+      // Put Arduino and components to sleep
+      goToSleep();
+
+      Serial.println(F("Brief wake..."));
+
+      // Reset necessary variables
+      previousMeasurement = 0;
+
+      // Begin measuring data
+      beginMeasurement();
+      handleEvent();
+
+      uint8_t currentHour = ds3231.now().hour();
+      isInactive = (currentHour < 6 || currentHour > 20);
+
+      if (ONE_MIN_SLEEP)
+      {
+        testCount++;
+        if (testCount >= measureTestCount)
+        {
+          isInactive = false;
+        }
+      }
+    }
 
     // Reset all components after waking up
     Serial.println(F("Device is waking up..."));
     resetComponents();
   }
 
-  // Check if data is ready to be measured
-  if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL || initialMeasurement)
-  {
-    Serial.println(F("10 seconds had passed, measuring environment..."));
-    previousMeasurement = currentMeasurement;
-    initialMeasurement = false;
-
-    // Set data ready status
-    if (scd41.getDataReadyStatus(dataReady) != 0)
-    {
-      // Display error messages
-      displayError(F("SCD41 failed"), F("Error: getDataReadyStatus() failed."));
-    }
-
-    while (!dataReady)
-    {
-      Serial.println(F("Data is not ready, trying again..."));
-      if ((currentMeasurement - previousMeasurement) >= DELAY_INTERVAL)
-      {
-        Serial.println(F("100 milliseconds had passed, measuring environment..."));
-        previousMeasurement = currentMeasurement;
-        if (scd41.getDataReadyStatus(dataReady) != 0)
-        {
-          // Display error messages
-          displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
-        }
-      }
-      currentMeasurement = millis();
-    }
-
-    // Read and set measurement values
-    if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
-    {
-      // Display error messages
-      displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
-    }
-  }
+  // Begin measuring data
+  beginMeasurement();
 
   // Handle measured data
   handleEvent();
@@ -148,39 +138,8 @@ void loop()
 // Handles events
 void handleEvent()
 {
-  // Check if alarm 1 for 10-hour interval of sleep is ringing
-  if (ds3231.alarmFired(1) && alarm1Set)
-  {
-    // Clear and disable this alarm
-    ds3231.clearAlarm(1);
-    ds3231.disableAlarm(1);
-    alarm1Set = false;
-
-    if (ONE_MIN_WRITE)
-    {
-      setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-    }
-    else
-    {
-      setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
-    }
-
-    alarm2Set = true;
-
-    char currentTime[] = "hh:mm:ss";
-    char targetTime[] = "hh:mm:ss";
-
-    Serial.print(F("Current Time: "));
-    ds3231.now().toString(currentTime);
-    Serial.println(currentTime);
-
-    Serial.print(F("Target Time: "));
-    ds3231.getAlarm2().toString(targetTime);
-    Serial.println(targetTime);
-  }
-
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
-  if (ds3231.alarmFired(2) && alarm2Set)
+  if (ds3231.alarmFired(1) && alarm1Set)
   {
     // Declare necessary variables
     char tempText[7], humidityText[7], co2Text[7];
@@ -208,66 +167,69 @@ void handleEvent()
     }
 
     // Clear this alarm
-    ds3231.disableAlarm(2);
-    ds3231.clearAlarm(2);
-    alarm2Set = false;
+    ds3231.disableAlarm(1);
+    ds3231.clearAlarm(1);
+    alarm1Set = false;
 
     // Set another alarm for 1-hour interval
 
     if (ONE_MIN_WRITE)
     {
-      setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+      setAlarm(ds3231.now() + TimeSpan(0, 0, 1, 0));
     }
     else
     {
-      setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
+      setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
     }
 
-    alarm2Set = true;
+    alarm1Set = true;
 
     Serial.print(F("Current Time: "));
     Serial.println(currentTime);
 
-    ds3231.getAlarm2().toString(targetTime);
+    ds3231.getAlarm1().toString(targetTime);
     Serial.print(F("Target Time: "));
     Serial.println(targetTime);
   }
 
-  byte isAuto = digitalRead(SLIDE_SWITCH_PIN);
-
-  // Turn yellow LED on or off for Auto indication
-  digitalWrite(YELLOW_LED_PIN, !isAuto);
-
-  // Check if in Auto Mode
-  if (isAuto == LOW)
+  if (!isInactive)
   {
-    // Check if temperature, humidity, and co2 are above normal level
-    if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
+    byte isAuto = digitalRead(SLIDE_SWITCH_PIN);
+
+    // Turn yellow LED on or off for Auto indication
+    digitalWrite(YELLOW_LED_PIN, !isAuto);
+
+    // Check if in Auto Mode
+    if (isAuto == LOW)
     {
-      digitalWrite(RELAY_PIN, LOW);
-      digitalWrite(RED_LED_PIN, LOW);
-      digitalWrite(GREEN_LED_PIN, HIGH);
+      // Check if temperature, humidity, and co2 are above normal level
+      if (temperature > 26 && relativeHumidity > 60 && co2Concentration > 1000)
+      {
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(RED_LED_PIN, LOW);
+        digitalWrite(GREEN_LED_PIN, HIGH);
+      }
+
+      // Check if temperature, humidity, and co2 are within normal level
+      else
+      {
+        digitalWrite(RELAY_PIN, HIGH);
+        digitalWrite(RED_LED_PIN, HIGH);
+        digitalWrite(GREEN_LED_PIN, LOW);
+      }
     }
 
-    // Check if temperature, humidity, and co2 are within normal level
+    // Check if in Manual Mode
     else
     {
-      digitalWrite(RELAY_PIN, HIGH);
-      digitalWrite(RED_LED_PIN, HIGH);
-      digitalWrite(GREEN_LED_PIN, LOW);
+      // Store the current state of rocker switch
+      byte isOn = digitalRead(ROCKER_SWITCH_PIN);
+
+      // Turn relay, red led, and green led on or off
+      digitalWrite(RELAY_PIN, isOn);
+      digitalWrite(RED_LED_PIN, isOn);
+      digitalWrite(GREEN_LED_PIN, !isOn);
     }
-  }
-
-  // Check if in Manual Mode
-  else
-  {
-    // Store the current state of rocker switch
-    byte isOn = digitalRead(ROCKER_SWITCH_PIN);
-
-    // Turn relay, red led, and green led on or off
-    digitalWrite(RELAY_PIN, isOn);
-    digitalWrite(RED_LED_PIN, isOn);
-    digitalWrite(GREEN_LED_PIN, !isOn);
   }
 }
 
@@ -427,12 +389,11 @@ void initializeDS3231()
   ds3231.clearAlarm(1);
   ds3231.clearAlarm(2);
   alarm1Set = false;
-  alarm2Set = false;
 
   // Disable SQW pin to allow for alarm interrupt
   ds3231.writeSqwPinMode(DS3231_OFF);
 
-  // Set alarm 2 for 1-hour interval of writing to SD card
+  // Set alarm 1 for 1-hour interval of writing to SD card
   if (DELETE_FILE)
   {
     SD.remove(SENSING_FILE_NAME);
@@ -441,14 +402,12 @@ void initializeDS3231()
 
   if (ONE_MIN_WRITE)
   {
-    setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
+    setAlarm(ds3231.now() + TimeSpan(0, 0, 1, 0));
   }
   else
   {
-    setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
+    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
   }
-
-  alarm2Set = true;
 
   char currentTime[] = "YYYY-MM-DD hh:mm:ss";
   char targetTime[] = "YYYY-MM-DD hh:mm:ss";
@@ -458,7 +417,7 @@ void initializeDS3231()
   Serial.println(currentTime);
 
   Serial.print(F("Target Time: "));
-  ds3231.getAlarm2().toString(targetTime);
+  ds3231.getAlarm1().toString(targetTime);
   Serial.println(targetTime);
 }
 
@@ -580,6 +539,52 @@ void initializeSwitches()
 // Other Functions
 /////////////////////////////////////
 
+// Start measuring the environment
+void beginMeasurement()
+{
+  bool dataReady = false;
+  unsigned long currentMeasurement = millis();
+  unsigned long interval = (isInactive) ? 0L : MEASURE_INTERVAL;
+
+  // Check if data is ready to be measured
+  if ((currentMeasurement - previousMeasurement) >= interval || initialMeasurement)
+  {
+    Serial.println(F("10 seconds had passed, measuring environment..."));
+    previousMeasurement = currentMeasurement;
+    initialMeasurement = false;
+
+    // Set data ready status
+    if (scd41.getDataReadyStatus(dataReady) != 0)
+    {
+      // Display error messages
+      displayError(F("SCD41 failed"), F("Error: getDataReadyStatus() failed."));
+    }
+
+    while (!dataReady)
+    {
+      Serial.println(F("Data is not ready, trying again..."));
+      if ((currentMeasurement - previousMeasurement) >= DELAY_INTERVAL)
+      {
+        Serial.println(F("100 milliseconds had passed, measuring environment..."));
+        previousMeasurement = currentMeasurement;
+        if (scd41.getDataReadyStatus(dataReady) != 0)
+        {
+          // Display error messages
+          displayError(F("SCD41 failed"), F("Error: getDataReadyStatus failed."));
+        }
+      }
+      currentMeasurement = millis();
+    }
+
+    // Read and set measurement values
+    if (scd41.readMeasurement(co2Concentration, temperature, relativeHumidity) != 0)
+    {
+      // Display error messages
+      displayError(F("SCD41 failed"), F("Error: readMeasurement() failed."));
+    }
+  }
+}
+
 // Power down Arduino and reset components
 void goToSleep()
 {
@@ -587,6 +592,28 @@ void goToSleep()
   char time[] = "YYYY-MM-DD hh:mm:ss";
   char targetTime[] = "YYYY-MM-DD hh:mm:ss";
 
+  // Reset alarms
+  ds3231.clearAlarm(1);
+  ds3231.disableAlarm(1);
+  alarm1Set = false;
+
+  if (ONE_MIN_SLEEP)
+  {
+    setAlarm(ds3231.now() + TimeSpan(0, 0, 1, -ds3231.now().second()));
+  }
+  else
+  {
+    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
+  }
+  alarm1Set = true;
+
+  ds3231.now().toString(time);
+  Serial.print(F("Current Time: "));
+  Serial.println(time);
+
+  ds3231.getAlarm1().toString(targetTime);
+  Serial.print(F("Wakeup Time: "));
+  Serial.println(targetTime);
   // Reset relay
   digitalWrite(RELAY_PIN, HIGH);
 
@@ -608,32 +635,6 @@ void goToSleep()
   digitalWrite(RED_LED_PIN, LOW);
   digitalWrite(YELLOW_LED_PIN, LOW);
   digitalWrite(GREEN_LED_PIN, LOW);
-
-  // Reset alarms
-  ds3231.clearAlarm(1);
-  ds3231.clearAlarm(2);
-  ds3231.disableAlarm(1);
-  ds3231.disableAlarm(2);
-  alarm1Set = false;
-  alarm2Set = false;
-
-  if (ONE_MIN_SLEEP)
-  {
-    setAlarm(1, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-  }
-  else
-  {
-    setAlarm(1, ds3231.now() + TimeSpan(1, 6 - ds3231.now().hour(), -ds3231.now().minute(), -ds3231.now().second()), 'h');
-  }
-  alarm1Set = true;
-
-  ds3231.now().toString(time);
-  Serial.print(F("Current Time: "));
-  Serial.println(time);
-
-  ds3231.getAlarm1().toString(targetTime);
-  Serial.print(F("Wakeup Time: "));
-  Serial.println(targetTime);
 
   // Display message
   lcd.clear();
@@ -709,9 +710,12 @@ void resetComponents()
   lcd.print(F("Waking up..."));
 
   // Initialize LEDs
-  digitalWrite(RED_LED_PIN, HIGH);
-  digitalWrite(YELLOW_LED_PIN, HIGH);
-  digitalWrite(GREEN_LED_PIN, HIGH);
+  if (LIGHT_LED)
+  {
+    digitalWrite(RED_LED_PIN, HIGH);
+    digitalWrite(YELLOW_LED_PIN, HIGH);
+    digitalWrite(GREEN_LED_PIN, HIGH);
+  }
 
   // Stop SCD41 current periodic measurement
   if (scd41.stopPeriodicMeasurement() != 0)
@@ -729,62 +733,12 @@ void resetComponents()
 }
 
 // Set alarm based on specified details
-void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
+void setAlarm(DateTime alarmTime)
 {
-  // Check if alarm mode is seconds or hours
-  switch (alarmMode)
+  if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Minute))
   {
-
-  // Set alarm in minutes
-  case 'm':
-    // Set alarm 1
-    if (alarmNum == 1)
-    {
-      if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Minute))
-      {
-        // Display error messages
-        displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
-      }
-    }
-
-    // Set alarm 2
-    else
-    {
-      if (!ds3231.setAlarm2(alarmTime, DS3231_A2_Minute))
-      {
-        // Display error messages
-        displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
-      }
-    }
-    break;
-
-  // Set alarm in hours
-  case 'h':
-    // Set alarm 1
-    if (alarmNum == 1)
-    {
-      if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Hour))
-      {
-        // Display error messages
-        displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
-      }
-    }
-
-    // Set alarm 2
-    else
-    {
-      if (!ds3231.setAlarm2(alarmTime, DS3231_A2_Hour))
-      {
-        // Display error messages
-        displayError(F("DS3231 failed"), F("Error: alarm 2 is not set."));
-      }
-    }
-    break;
-
-  default:
     // Display error messages
-    displayError(F("DS3231 failed"), F("Error: invalid alarm mode set."));
-    break;
+    displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
   }
 }
 
