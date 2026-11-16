@@ -24,15 +24,21 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_SELF_TEST = true,
-  ONE_MIN_WRITE = false,
-  DELETE_FILE = false,
-  READ_SD_CARD = true,
-  ADJUST_TIME = false,
-  LIGHT_LED = true,
-  ONE_MIN_SLEEP = false,
-  PRINT_TIME = true
+  SCD41_TEST = true,
+  LED_TEST = true,
+  SLEEP_TEST = false,
+  READ_TEST = true,
+  WRITE_TEST = false,
+  DELETE_FILE_TEST = false,
+  ADJUST_TIME_TEST = false,
+  PRINT_TIME_TEST = true,
 };
+
+TimeSpan sleepingTimeInterval = TimeSpan(0, 0, 1, 0);
+Ds3231Alarm1Mode sleepAlarmMode = DS3231_A1_Minute;
+
+TimeSpan writingTimeInterval = TimeSpan(0, 0, 1, 0);
+Ds3231Alarm1Mode writeAlarmMode = DS3231_A1_Minute;
 
 int testCount = 0;
 int measureTestCount = 3;
@@ -82,7 +88,7 @@ void loop()
   // Initialize necessary variables
   uint8_t currentHour = ds3231.now().hour();
 
-  isInactive = (ONE_MIN_SLEEP && isInactive) ? true : (currentHour < 6 || currentHour > 20);
+  isInactive = (SLEEP_TEST && isInactive) ? true : (currentHour < 6 || currentHour > 20);
 
   // Check if current time is not between 6AM and 8PM
   if (isInactive)
@@ -106,7 +112,7 @@ void loop()
       uint8_t currentHour = ds3231.now().hour();
       isInactive = (currentHour < 6 || currentHour > 20);
 
-      if (ONE_MIN_SLEEP)
+      if (SLEEP_TEST)
       {
         testCount++;
         if (testCount >= measureTestCount)
@@ -138,7 +144,7 @@ void loop()
 // Handles events
 void handleEvent()
 {
-  // Check if alarm 2 for 1-hour interval writing to SD card is ringing
+  // Check if alarm 1 for 1-hour interval writing to SD card is ringing
   if (ds3231.alarmFired(1) && alarm1Set)
   {
     // Declare necessary variables
@@ -160,7 +166,7 @@ void handleEvent()
     Serial.println(F("Writing data to SD card..."));
     writeToCard(SENSING_FILE_NAME, content);
 
-    if (READ_SD_CARD)
+    if (READ_TEST)
     {
       Serial.println(F("Reading data from SD card..."));
       readFromCard(SENSING_FILE_NAME);
@@ -173,13 +179,13 @@ void handleEvent()
 
     // Set another alarm for 1-hour interval
 
-    if (ONE_MIN_WRITE)
+    if (WRITE_TEST)
     {
-      setAlarm(ds3231.now() + TimeSpan(0, 0, 1, 0));
+      setAlarm(ds3231.now() + writingTimeInterval, writeAlarmMode);
     }
     else
     {
-      setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
+      setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), DS3231_A1_Minute);
     }
 
     alarm1Set = true;
@@ -247,7 +253,7 @@ void displayData()
   char testTime[] = "hh:mm:ss";
   ds3231.now().toString(currentTime);
 
-  if (PRINT_TIME)
+  if (PRINT_TIME_TEST)
   {
     ds3231.now().toString(testTime);
     if ((currentMillis - previousTest) >= 1000)
@@ -364,7 +370,7 @@ void initializeDS3231()
     displayError(F("DS3231 failed"), F("Error: DS3231 failed to initialize."));
   }
 
-  if (ADJUST_TIME)
+  if (ADJUST_TIME_TEST)
   {
     ds3231.adjust(compileTime + TimeSpan(timeOffset));
   }
@@ -394,19 +400,19 @@ void initializeDS3231()
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 1 for 1-hour interval of writing to SD card
-  if (DELETE_FILE)
+  if (DELETE_FILE_TEST)
   {
     SD.remove(SENSING_FILE_NAME);
     SD.remove(OPERATION_FILE_NAME);
   }
 
-  if (ONE_MIN_WRITE)
+  if (WRITE_TEST)
   {
-    setAlarm(ds3231.now() + TimeSpan(0, 0, 1, 0));
+    setAlarm(ds3231.now() + writingTimeInterval, writeAlarmMode);
   }
   else
   {
-    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
+    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), DS3231_A1_Minute);
   }
 
   char currentTime[] = "YYYY-MM-DD hh:mm:ss";
@@ -439,7 +445,7 @@ void initializeLED()
   pinMode(GREEN_LED_PIN, OUTPUT);
 
   // Set all LEDs ON initially
-  if (LIGHT_LED)
+  if (LED_TEST)
   {
     digitalWrite(RED_LED_PIN, HIGH);
     digitalWrite(YELLOW_LED_PIN, HIGH);
@@ -488,7 +494,7 @@ void initializeSCD41()
     displayError(F("SCD41 failed"), F("Error: reinit() failed."));
   }
 
-  if (SCD41_SELF_TEST)
+  if (SCD41_TEST)
   {
     // Test the component's functionality
     if (scd41.performSelfTest(testResult) != 0)
@@ -597,13 +603,13 @@ void goToSleep()
   ds3231.disableAlarm(1);
   alarm1Set = false;
 
-  if (ONE_MIN_SLEEP)
+  if (SLEEP_TEST)
   {
-    setAlarm(ds3231.now() + TimeSpan(0, 0, 1, -ds3231.now().second()));
+    setAlarm(ds3231.now() + sleepingTimeInterval, sleepAlarmMode);
   }
   else
   {
-    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()));
+    setAlarm(ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), DS3231_A1_Minute);
   }
   alarm1Set = true;
 
@@ -710,7 +716,7 @@ void resetComponents()
   lcd.print(F("Waking up..."));
 
   // Initialize LEDs
-  if (LIGHT_LED)
+  if (LED_TEST)
   {
     digitalWrite(RED_LED_PIN, HIGH);
     digitalWrite(YELLOW_LED_PIN, HIGH);
@@ -733,9 +739,9 @@ void resetComponents()
 }
 
 // Set alarm based on specified details
-void setAlarm(DateTime alarmTime)
+void setAlarm(DateTime alarmTime, Ds3231Alarm1Mode alarmMode)
 {
-  if (!ds3231.setAlarm1(alarmTime, DS3231_A1_Minute))
+  if (!ds3231.setAlarm1(alarmTime, alarmMode))
   {
     // Display error messages
     displayError(F("DS3231 failed"), F("Error: alarm 1 is not set."));
