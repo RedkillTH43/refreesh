@@ -24,17 +24,19 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_SELF_TEST = false,
+  SCD41_SELF_TEST = true,
   ONE_MIN_WRITE = false,
   DELETE_FILE = false,
   READ_SD_CARD = true,
   ADJUST_TIME = false,
   LIGHT_LED = true,
-  ONE_MIN_SLEEP = false
+  ONE_MIN_SLEEP = false,
+  PRINT_TIME = false
 };
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
+const int timeOffset = 15;
 const unsigned long DISPLAY_INTERVAL = 5000L;
 const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 const unsigned long DELAY_INTERVAL = 100L;
@@ -277,11 +279,15 @@ void displayData()
   char currentTime[] = "hh:mm";
   char testTime[] = "hh:mm:ss";
   ds3231.now().toString(currentTime);
-  ds3231.now().toString(testTime);
-  if ((currentMillis - previousTest) >= 1000)
+
+  if (PRINT_TIME)
   {
-    previousTest = currentMillis;
-    Serial.println(testTime);
+    ds3231.now().toString(testTime);
+    if ((currentMillis - previousTest) >= 1000)
+    {
+      previousTest = currentMillis;
+      Serial.println(testTime);
+    }
   }
 
   // Check if elapsed time is 5 seconds
@@ -384,6 +390,7 @@ void initializeArduino()
 // Prepare DS3231 on startup
 void initializeDS3231()
 {
+  DateTime compileTime = DateTime(F(__DATE__), F(__TIME__));
   // Test I2C connection
   if (!ds3231.begin())
   {
@@ -392,14 +399,14 @@ void initializeDS3231()
 
   if (ADJUST_TIME)
   {
-    ds3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    ds3231.adjust(compileTime + TimeSpan(timeOffset));
   }
 
   // Checks if stopped due to power loss
   if (ds3231.lostPower())
   {
     // Adjust time to compile time
-    ds3231.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    ds3231.adjust(compileTime + TimeSpan(timeOffset));
   }
 
   // Disable unnecessary pin
