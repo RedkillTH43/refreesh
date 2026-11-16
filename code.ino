@@ -24,9 +24,9 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_SELF_TEST = true,
-  ONE_MIN_WRITE = false,
-  DELETE_FILE = false,
+  SCD41_SELF_TEST = false,
+  ONE_MIN_WRITE = true,
+  DELETE_FILE = true,
   READ_SD_CARD = true,
   ADJUST_TIME = false,
   LIGHT_LED = true,
@@ -35,7 +35,10 @@ enum Tests : bool
 };
 
 // Define global macros
-const char FILE_NAME[] = "data.csv";
+const char SENSING_FILE_NAME[] = "sdata.csv";
+const char OPERATION_FILE_NAME[] = "odata.csv";
+const int SENSING_ARRAY_LENGTH = 5;
+const int OPERATION_ARRAY_LENGTH = 7;
 const int timeOffset = 15;
 const unsigned long DISPLAY_INTERVAL = 5000L;
 const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
@@ -192,14 +195,16 @@ void handleEvent()
     dtostrf(relativeHumidity, 3, 2, humidityText);
     itoa(co2Concentration, co2Text, 10);
 
+    char *content[] = {currentDate, currentTime, tempText, humidityText, co2Text};
+
     // Write to file in sd card
     Serial.println(F("Writing data to SD card..."));
-    writeToCard(tempText, humidityText, co2Text, currentTime, currentDate);
+    writeToCard(SENSING_FILE_NAME, content);
 
     if (READ_SD_CARD)
     {
       Serial.println(F("Reading data from SD card..."));
-      readFromCard();
+      readFromCard(SENSING_FILE_NAME);
     }
 
     // Clear this alarm
@@ -430,7 +435,8 @@ void initializeDS3231()
   // Set alarm 2 for 1-hour interval of writing to SD card
   if (DELETE_FILE)
   {
-    SD.remove(FILE_NAME);
+    SD.remove(SENSING_FILE_NAME);
+    SD.remove(OPERATION_FILE_NAME);
   }
 
   if (ONE_MIN_WRITE)
@@ -649,7 +655,7 @@ void onAlarm()
 }
 
 // Read sd card contents
-void readFromCard()
+void readFromCard(const char FILE_NAME[])
 {
   // Initialize File object
   File dataFile;
@@ -783,12 +789,13 @@ void setAlarm(int alarmNum, DateTime alarmTime, char alarmMode)
 }
 
 // Write data to sd card
-void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char time[10], char date[12])
+void writeToCard(const char FILE_NAME[], char *content[])
 {
   // Initialize File object
   File dataFile;
   bool status;
   bool displayed = false;
+  int length = (FILE_NAME == SENSING_FILE_NAME) ? SENSING_ARRAY_LENGTH : OPERATION_ARRAY_LENGTH;
 
   dataFile = SD.open(FILE_NAME, FILE_WRITE);
 
@@ -810,23 +817,18 @@ void writeToCard(char tempText[7], char humidityText[7], char co2Text[7], char t
     dataFile = SD.open(FILE_NAME, FILE_WRITE);
   }
 
-  // Write date to file
-  dataFile.print(date);
-  dataFile.print(F(", "));
+  for (int i = 0; i < length; i++)
+  {
+    if (i == (length - 1))
+    {
+      dataFile.println(content[i]);
+    }
+    else
+    {
+      dataFile.print(content[i]);
+      dataFile.print(F(", "));
+    }
+  }
 
-  // Write time to file
-  dataFile.print(time);
-  dataFile.print(F(", "));
-
-  // Write temperature to file
-  dataFile.print(tempText);
-  dataFile.print(F(", "));
-
-  // Write humidity to file
-  dataFile.print(humidityText);
-  dataFile.print(F(", "));
-
-  // Write co2 to file
-  dataFile.println(co2Text);
   dataFile.close();
 }
