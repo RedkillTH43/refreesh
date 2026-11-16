@@ -29,11 +29,9 @@ enum Tests : bool
   DELETE_FILE = false,
   READ_SD_CARD = true,
   ADJUST_TIME = false,
-  LIGHT_LED = true
+  LIGHT_LED = true,
+  ONE_MIN_SLEEP = false
 };
-
-bool ONE_MIN_SLEEP = false;
-bool isInactive;
 
 // Define global macros
 const char FILE_NAME[] = "data.csv";
@@ -42,12 +40,14 @@ const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
 const unsigned long DELAY_INTERVAL = 100L;
 
 // Initialize flags
+bool isInactive = true;
 bool hasDisplay = false;
-bool initialMeasurement = true;
 bool alarm1Set = false;
 bool alarm2Set = false;
+bool initialMeasurement = true;
 unsigned long previousMeasurement = 0L;
 unsigned long previousMillis = 0L;
+unsigned long previousTest = 0L;
 uint16_t co2Concentration = 0;
 float temperature = 0.0f;
 float relativeHumidity = 0.0f;
@@ -73,15 +73,14 @@ void setup()
 void loop()
 {
   // Initialize necessary variables
-  uint8_t currentHour = ds3231.now().hour();
   bool dataReady = false;
+  uint8_t currentHour = ds3231.now().hour();
   unsigned long currentMeasurement = millis();
-  char time[] = "hh:mm";
-  char date[] = "YYYY-MM-DD";
-  isInactive = (currentHour <= 6 || currentHour >= 20);
+
+  isInactive = (ONE_MIN_SLEEP && isInactive) ? true : (currentHour <= 6 || currentHour >= 20);
 
   // Check if current time is not between 6AM and 8PM
-  if (isInactive || ONE_MIN_SLEEP)
+  if (isInactive)
   {
     Serial.println(F("Device is going to sleep..."));
     // Put Arduino and components to sleep
@@ -90,13 +89,7 @@ void loop()
     // Reset all components after waking up
     Serial.println(F("Device is waking up..."));
     resetComponents();
-    ONE_MIN_SLEEP = false;
-    isInactive = false;
   }
-
-  // Store current time
-  ds3231.now().toString(time);
-  ds3231.now().toString(date);
 
   // Check if data is ready to be measured
   if ((currentMeasurement - previousMeasurement) >= MEASURE_INTERVAL || initialMeasurement)
@@ -137,10 +130,10 @@ void loop()
   }
 
   // Handle measured data
-  handleEvent(temperature, relativeHumidity, co2Concentration, time, date);
+  handleEvent();
 
   // Display measured data
-  displayData(temperature, relativeHumidity, co2Concentration, time);
+  displayData();
 }
 
 /////////////////////////////////////
@@ -148,7 +141,7 @@ void loop()
 /////////////////////////////////////
 
 // Handles events
-void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10], char date[12])
+void handleEvent()
 {
   // Check if alarm 1 for 10-hour interval of sleep is ringing
   if (ds3231.alarmFired(1) && alarm1Set)
@@ -161,12 +154,24 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     if (ONE_MIN_WRITE)
     {
       setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-      alarm2Set = true;
     }
     else
     {
-      setSDCardWriteAlarm();
+      setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
     }
+
+    alarm2Set = true;
+
+    char currentTime[] = "hh:mm:ss";
+    char targetTime[] = "hh:mm:ss";
+
+    Serial.print(F("Current Time: "));
+    ds3231.now().toString(currentTime);
+    Serial.println(currentTime);
+
+    Serial.print(F("Target Time: "));
+    ds3231.getAlarm2().toString(targetTime);
+    Serial.println(targetTime);
   }
 
   // Check if alarm 2 for 1-hour interval writing to SD card is ringing
@@ -174,6 +179,11 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
   {
     // Declare necessary variables
     char tempText[7], humidityText[7], co2Text[7];
+    char currentDate[] = "YYYY-MM-DD";
+    char currentTime[] = "hh:mm:ss";
+    char targetTime[] = "hh:mm:ss";
+    ds3231.now().toString(currentTime);
+    ds3231.now().toString(currentDate);
 
     // Convert values to strings
     dtostrf(temperature, 3, 2, tempText);
@@ -182,7 +192,7 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 
     // Write to file in sd card
     Serial.println(F("Writing data to SD card..."));
-    writeToCard(tempText, humidityText, co2Text, time, date);
+    writeToCard(tempText, humidityText, co2Text, currentTime, currentDate);
 
     if (READ_SD_CARD)
     {
@@ -200,12 +210,20 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
     if (ONE_MIN_WRITE)
     {
       setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-      alarm2Set = true;
     }
     else
     {
-      setSDCardWriteAlarm();
+      setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
     }
+
+    alarm2Set = true;
+
+    Serial.print(F("Current Time: "));
+    Serial.println(currentTime);
+
+    ds3231.getAlarm2().toString(targetTime);
+    Serial.print(F("Target Time: "));
+    Serial.println(targetTime);
   }
 
   byte isAuto = digitalRead(SLIDE_SWITCH_PIN);
@@ -251,11 +269,20 @@ void handleEvent(float temperature, float relativeHumidity, uint16_t co2Concentr
 /////////////////////////////////////
 
 // Display sensory data
-void displayData(float temperature, float relativeHumidity, uint16_t co2Concentration, char time[10])
+void displayData()
 {
   // Initialize necessary variables
   unsigned long currentMillis = millis();
   unsigned long elapsedTime = currentMillis - previousMillis;
+  char currentTime[] = "hh:mm";
+  char testTime[] = "hh:mm:ss";
+  ds3231.now().toString(currentTime);
+  ds3231.now().toString(testTime);
+  if ((currentMillis - previousTest) >= 1000)
+  {
+    previousTest = currentMillis;
+    Serial.println(testTime);
+  }
 
   // Check if elapsed time is 5 seconds
   if (elapsedTime >= DISPLAY_INTERVAL)
@@ -289,7 +316,7 @@ void displayData(float temperature, float relativeHumidity, uint16_t co2Concentr
       // Display time to LCD
       lcd.setCursor(0, 1);
       lcd.print(F("Time: "));
-      lcd.print(time);
+      lcd.print(currentTime);
     }
 
     // Reset necessary variables
@@ -394,7 +421,6 @@ void initializeDS3231()
   ds3231.writeSqwPinMode(DS3231_OFF);
 
   // Set alarm 2 for 1-hour interval of writing to SD card
-
   if (DELETE_FILE)
   {
     SD.remove(FILE_NAME);
@@ -403,12 +429,24 @@ void initializeDS3231()
   if (ONE_MIN_WRITE)
   {
     setAlarm(2, ds3231.now() + TimeSpan(0, 0, 1, 0), 'm');
-    alarm2Set = true;
   }
   else
   {
-    setSDCardWriteAlarm();
+    setAlarm(2, ds3231.now() + TimeSpan(0, 1, -ds3231.now().minute(), -ds3231.now().second()), 'm');
   }
+
+  alarm2Set = true;
+
+  char currentTime[] = "YYYY-MM-DD hh:mm:ss";
+  char targetTime[] = "YYYY-MM-DD hh:mm:ss";
+
+  Serial.print(F("Current Time: "));
+  ds3231.now().toString(currentTime);
+  Serial.println(currentTime);
+
+  Serial.print(F("Target Time: "));
+  ds3231.getAlarm2().toString(targetTime);
+  Serial.println(targetTime);
 }
 
 // Prepare LCD on startup
@@ -649,6 +687,7 @@ void resetComponents()
   previousMeasurement = 0;
   previousMillis = 0;
   hasDisplay = false;
+  isInactive = false;
 
   // Initialize LCD1602
   lcd.backlight();
@@ -674,25 +713,6 @@ void resetComponents()
     // Display error messages
     displayError(F("SCD41 failed"), F("Error: startPeriodicMeasurement failed."));
   }
-}
-
-void setSDCardWriteAlarm()
-{
-  DateTime currentTimeObject = ds3231.now();
-  char currentTime[] = "YYYY-MM-DD hh:mm:ss";
-  char targetTime[] = "YYYY-MM-DD hh:mm:ss";
-
-  // Set a new alarm for 1-hour interval of writing to SD card
-  setAlarm(2, ds3231.now() + TimeSpan(0, 1, -currentTimeObject.minute(), -currentTimeObject.second()), 'm');
-  alarm2Set = true;
-
-  Serial.print(F("Current Time: "));
-  currentTimeObject.toString(currentTime);
-  Serial.println(currentTime);
-
-  Serial.print(F("Target Time: "));
-  ds3231.getAlarm2().toString(targetTime);
-  Serial.println(targetTime);
 }
 
 // Set alarm based on specified details
