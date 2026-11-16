@@ -24,18 +24,18 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_TEST = false,
+  SCD41_TEST = true,
   LED_TEST = true,
   SLEEP_TEST = false,
-  READ_TEST = true,
-  WRITE_TEST = true,
-  DELETE_FILE_TEST = true,
+  READ_TEST = false,
+  WRITE_TEST = false,
+  DELETE_FILE_TEST = false,
   ADJUST_TIME_TEST = false,
-  PRINT_TIME_TEST = true,
-  ON_OFF_TIME_TEST = true
+  PRINT_TIME_TEST = false,
+  ON_OFF_TIME_TEST = false
 };
 
-TimeSpan sleepingTimeInterval = TimeSpan(0, 0, 1, 0);
+TimeSpan sleepingTimeInterval = TimeSpan(0, 0, 0, 10);
 Ds3231Alarm1Mode sleepAlarmMode = DS3231_A1_Minute;
 
 TimeSpan writingTimeInterval = TimeSpan(0, 0, 0, 10);
@@ -48,7 +48,7 @@ int measureTestCount = 3;
 const char SENSING_FILE_NAME[] = "sdata.csv";
 const char OPERATION_FILE_NAME[] = "odata.csv";
 const int SENSING_ARRAY_LENGTH = 5;
-const int OPERATION_ARRAY_LENGTH = 4;
+const int OPERATION_ARRAY_LENGTH = 3;
 const int timeOffset = 15;
 const unsigned long DISPLAY_INTERVAL = 5000L;
 const unsigned long MEASURE_INTERVAL = DISPLAY_INTERVAL * 2;
@@ -101,6 +101,15 @@ void loop()
   // Check if current time is not between 6AM and 8PM
   if (isInactive)
   {
+    char timeOnText[7], timeOffText[7];
+    char currentDate[] = "YYYY-MM-DD";
+    ds3231.now().toString(currentDate);
+
+    dtostrf(timeOn, 3, 2, timeOnText);
+    dtostrf(timeOff, 3, 2, timeOffText);
+    char *content[] = {currentDate, timeOnText, timeOffText};
+    writeToCard(OPERATION_FILE_NAME, content);
+
     while (isInactive)
     {
       Serial.println(F("Device is going to sleep..."));
@@ -118,7 +127,7 @@ void loop()
       handleEvent();
 
       uint8_t currentHour = ds3231.now().hour();
-      isInactive = (currentHour < 6 || currentHour > 20);
+      isInactive = (currentHour < 6 || currentHour > 20 || SLEEP_TEST);
 
       if (SLEEP_TEST)
       {
@@ -185,7 +194,11 @@ void handleEvent()
     if (READ_TEST)
     {
       Serial.println(F("Reading data from SD card..."));
+      Serial.println(SENSING_FILE_NAME);
       readFromCard(SENSING_FILE_NAME);
+
+      Serial.println(OPERATION_FILE_NAME);
+      readFromCard(OPERATION_FILE_NAME);
     }
 
     // Clear this alarm
