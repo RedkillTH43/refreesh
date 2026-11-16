@@ -24,10 +24,10 @@ enum Pins : byte
 
 enum Tests : bool
 {
-  SCD41_TEST = true,
+  SCD41_TEST = false,
   LED_TEST = true,
   SLEEP_TEST = false,
-  READ_TEST = false,
+  READ_TEST = true,
   WRITE_TEST = false,
   DELETE_FILE_TEST = false,
   ADJUST_TIME_TEST = false,
@@ -42,7 +42,8 @@ TimeSpan writingTimeInterval = TimeSpan(0, 0, 0, 10);
 Ds3231Alarm1Mode writeAlarmMode = DS3231_A1_Second;
 
 int testCount = 0;
-int measureTestCount = 3;
+int measureTestCount = 1;
+bool hadRead = false;
 
 // Define global macros
 const char SENSING_FILE_NAME[] = "sdata.csv";
@@ -93,6 +94,12 @@ void setup()
 
 void loop()
 {
+  if (READ_TEST && !hadRead)
+  {
+    hadRead = true;
+    readFromCard(SENSING_FILE_NAME);
+    readFromCard(OPERATION_FILE_NAME);
+  }
   // Initialize necessary variables
   uint8_t currentHour = ds3231.now().hour();
 
